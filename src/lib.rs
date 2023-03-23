@@ -1,4 +1,5 @@
-//#![feature(generic_const_exprs)]
+#![allow(incomplete_features)]
+#![feature(generic_const_exprs)]
 //! # LodTree
 //! LodTree, a simple tree data structure for doing chunk-based level of detail.
 //!

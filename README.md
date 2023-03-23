@@ -1,24 +1,26 @@
 [![Documentation](https://docs.rs/lodtree/badge.svg)](https://docs.rs/lodtree)
 
 # LodTree
-LodTree, a simple tree data structure for doing chunk-based level of detail.
+LodTree, a fast generic tree data structure that supports complex spatial queries at various level of detail.
 
 ## Goals
-The aim of this crate is to provide a generic, easy to use tree data structure that can be used to make Quadtrees, Octrees and more for chunked level of detail.
+The aim of this crate is to provide a generic, easy to use tree data structure that can be used to make Quadtrees, Octrees for various realtime applications.
 
-Internally, the tree tries to keep as much memory allocated, to avoid the cost of heap allocation, and stores the actual chunks data seperate from the tree data.
+Internally, the tree tries to keep all needed memory allocated in arenas to avoid the memory fragmentation, and stores the actual data chunks seperate from the tree nodes for vector processing.
  
-This does come at a cost. Mainly, only the chunks that are going to be added and their locations can be retreived as a slice, although for most (procedural) terrain implementations.
+## Accepted design compromises
 
-## Non-goals
-Be a general-usage tree data structure for storing items at specific locations.
+ - Data chunks that are nearby in space do not necessarily land in nearby locations in the tree's memory.
+ - There is no way to reclaim allocated memory short of rebuilding the tree from scratch.
+
 
 ## Features
  - Provides sets of chunks that need some action performed on them
  - Tries to avoid memory (re)allocations and moves
- - Stores chunks themselves in a contiguous array
- - Uses an internal chunk cache to allow reusing chunks at a memory tradeoff
- - Provides some extra iterators for finding chunks in certain bounds
+ - Stores data chunks in a contiguous array
+ - Stores tree nodes in a contiguous array
+ - External chunk cache can be used to allow reusing chunks at a memory tradeoff
+ - Provides nice iterators for finding chunks in certain bounds
 
 ### Examples:
  - [rayon](examples/rayon.rs): shows how to use the tree with rayon to generate new chunks in parallel.
@@ -107,16 +109,12 @@ tree.complete_update();
 ```
 
 ## Roadmap
-### 0.2.0:
- - Support getting "edited" chunks, via also passing along a region in which chunks would be edited. NEEDS DOCS AND TESTING
- - caching DONE
- - iterators for all chunk data accessing methods. DONE
- - getting a chunk by position DONE
+### 0.1.0:
+ - proper node structure
+ - external caching
  - swap L and C, so the key (position) is before the chunk, which is consistent with other key-value datatypes in rust
-### 0.3.0:
- - Replace the tree in favour of a list to generate all nodes up front, then use a hashmap for storage
- - this keeps everything in one map, with optional removal from that map. Also simplifies everything as there's only "add", "add from cache", "remove to cache" and "remove entirely" instead of the current add, add from cache, remove, merge, subdivide, and delete
- - no-std (although alloc will be required here)
+ - remove useless features from original datastructure
+ - more benchmarks
 
 ## License
 Licensed under either of

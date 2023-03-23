@@ -28,37 +28,37 @@ macro_rules! impl_all_iterators {
 	) => {
         // define the struct
         #[doc=concat!("Iterator for chunks, see ", stringify!($func_name), "() under Tree for documentation")]
-		pub struct $name<'a, C: Sized, L: LodVec> {
+		pub struct $name<'a, C: Sized, L: LodVec> where [(); L::NUM_CHILDREN]: {
             tree: &'a Tree<C, L>,
             index: usize,
         }
 
 		#[doc=concat!("Iterator for mutable chunks, see ", stringify!($func_name_mut), "() under Tree for documentation")]
-        pub struct $name_mut<'a, C: Sized, L: LodVec> {
+        pub struct $name_mut<'a, C: Sized, L: LodVec> where [(); L::NUM_CHILDREN]:{
             tree: &'a mut Tree<C, L>,
             index: usize,
         }
 
         #[doc=concat!("Iterator for chunk positions, see ", stringify!($func_name_pos), "() under Tree for documentation")]
-        pub struct $name_pos<'a, C: Sized, L: LodVec> {
+        pub struct $name_pos<'a, C: Sized, L: LodVec> where [(); L::NUM_CHILDREN]:{
             tree: &'a Tree<C, L>,
             index: usize,
         }
 
         #[doc=concat!("Iterator for chunks and positions, see ", stringify!($func_name_chunk_and_pos), "() under Tree for documentation")]
-        pub struct $name_chunk_and_pos<'a, C: Sized, L: LodVec> {
+        pub struct $name_chunk_and_pos<'a, C: Sized, L: LodVec>where [(); L::NUM_CHILDREN]: {
             tree: &'a Tree<C, L>,
             index: usize,
         }
 
         #[doc=concat!("Iterator for mutable chunks and positions, see ", stringify!($func_name_chunk_and_pos_mut), "() under Tree for documentation")]
-		pub struct $name_chunk_and_pos_mut<'a, C: Sized, L: LodVec> {
+		pub struct $name_chunk_and_pos_mut<'a, C: Sized, L: LodVec> where [(); L::NUM_CHILDREN]:{
             tree: &'a mut Tree<C, L>,
             index: usize,
         }
 
         // and implement iterator for it
-        impl<'a, C: Sized, L: LodVec> Iterator for $name<'a, C, L> {
+        impl<'a, C: Sized, L: LodVec> Iterator for $name<'a, C, L> where [(); L::NUM_CHILDREN]:{
             type Item = &'a C;
 
 			#[inline]
@@ -78,7 +78,7 @@ macro_rules! impl_all_iterators {
             }
         }
 
-        impl<'a, C: Sized, L: LodVec> Iterator for $name_mut<'a, C, L> {
+        impl<'a, C: Sized, L: LodVec> Iterator for $name_mut<'a, C, L> where [(); L::NUM_CHILDREN]:{
             type Item = &'a mut C;
 
 			#[inline]
@@ -98,7 +98,7 @@ macro_rules! impl_all_iterators {
             }
         }
 
-        impl<'a, C: Sized, L: LodVec> Iterator for $name_pos<'a, C, L> {
+        impl<'a, C: Sized, L: LodVec> Iterator for $name_pos<'a, C, L> where [(); L::NUM_CHILDREN]:{
             type Item = L;
 
 			#[inline]
@@ -118,7 +118,7 @@ macro_rules! impl_all_iterators {
             }
         }
 
-        impl<'a, C: Sized, L: LodVec> Iterator for $name_chunk_and_pos<'a, C, L> {
+        impl<'a, C: Sized, L: LodVec> Iterator for $name_chunk_and_pos<'a, C, L> where [(); L::NUM_CHILDREN]:{
             type Item = (&'a C, L);
 
 			#[inline]
@@ -138,7 +138,7 @@ macro_rules! impl_all_iterators {
             }
         }
 
-        impl<'a, C: Sized, L: LodVec> Iterator for $name_chunk_and_pos_mut<'a, C, L> {
+        impl<'a, C: Sized, L: LodVec> Iterator for $name_chunk_and_pos_mut<'a, C, L> where [(); L::NUM_CHILDREN]:{
             type Item = (&'a mut C, L);
 
 			#[inline]
@@ -162,35 +162,35 @@ macro_rules! impl_all_iterators {
         }
 
         // exact size as well
-        impl<'a, C: Sized, L: LodVec> ExactSizeIterator for $name<'a, C, L> {
+        impl<'a, C: Sized, L: LodVec> ExactSizeIterator for $name<'a, C, L> where [(); L::NUM_CHILDREN]:{
 			#[inline]
             fn len(&self) -> usize {
                 self.tree.$len()
             }
         }
 
-        impl<'a, C: Sized, L: LodVec> ExactSizeIterator for $name_mut<'a, C, L> {
+        impl<'a, C: Sized, L: LodVec> ExactSizeIterator for $name_mut<'a, C, L> where [(); L::NUM_CHILDREN]:{
 			#[inline]
             fn len(&self) -> usize {
                 self.tree.$len()
             }
         }
 
-        impl<'a, C: Sized, L: LodVec> ExactSizeIterator for $name_pos<'a, C, L> {
+        impl<'a, C: Sized, L: LodVec> ExactSizeIterator for $name_pos<'a, C, L> where [(); L::NUM_CHILDREN]:{
 			#[inline]
             fn len(&self) -> usize {
                 self.tree.$len()
             }
         }
 
-        impl<'a, C: Sized, L: LodVec> ExactSizeIterator for $name_chunk_and_pos<'a, C, L> {
+        impl<'a, C: Sized, L: LodVec> ExactSizeIterator for $name_chunk_and_pos<'a, C, L> where [(); L::NUM_CHILDREN]:{
 			#[inline]
             fn len(&self) -> usize {
                 self.tree.$len()
             }
         }
 
-        impl<'a, C: Sized, L: LodVec> ExactSizeIterator for $name_chunk_and_pos_mut<'a, C, L> {
+        impl<'a, C: Sized, L: LodVec> ExactSizeIterator for $name_chunk_and_pos_mut<'a, C, L>where [(); L::NUM_CHILDREN]: {
 			#[inline]
             fn len(&self) -> usize {
                 self.tree.$len()
@@ -198,12 +198,12 @@ macro_rules! impl_all_iterators {
         }
 
         // fused, because it will always return none when done
-        impl<'a, C: Sized, L: LodVec> std::iter::FusedIterator for $name<'a, C, L> {}
-        impl<'a, C: Sized, L: LodVec> std::iter::FusedIterator for $name_mut<'a, C, L> {}
-        impl<'a, C: Sized, L: LodVec> std::iter::FusedIterator for $name_pos<'a, C, L> {}
-        impl<'a, C: Sized, L: LodVec> std::iter::FusedIterator for $name_chunk_and_pos<'a, C, L> {}
+        impl<'a, C: Sized, L: LodVec> std::iter::FusedIterator for $name<'a, C, L> where [(); L::NUM_CHILDREN]:{}
+        impl<'a, C: Sized, L: LodVec> std::iter::FusedIterator for $name_mut<'a, C, L> where [(); L::NUM_CHILDREN]:{}
+        impl<'a, C: Sized, L: LodVec> std::iter::FusedIterator for $name_pos<'a, C, L> where [(); L::NUM_CHILDREN]:{}
+        impl<'a, C: Sized, L: LodVec> std::iter::FusedIterator for $name_chunk_and_pos<'a, C, L> where [(); L::NUM_CHILDREN]:{}
         impl<'a, C: Sized, L: LodVec> std::iter::FusedIterator
-            for $name_chunk_and_pos_mut<'a, C, L>
+            for $name_chunk_and_pos_mut<'a, C, L> where [(); L::NUM_CHILDREN]:
         {
         }
 
@@ -212,6 +212,7 @@ macro_rules! impl_all_iterators {
         where
             C: Sized,
             L: LodVec,
+            [(); L::NUM_CHILDREN]:,
             Self: 'a,
         {
 			#[inline]
@@ -423,7 +424,7 @@ impl<L: LodVec> Iterator for ChunksInBoundIter<L> {
         let current = self.stack.pop()?;
 
         // go over all child nodes
-        for i in 0..L::NUM_CHILDREN {
+        for i in 0..L::NUM_CHILDREN as u32{
             let position = current.get_child(i);
 
             // if they are in bounds, and the correct depth, add them to the stack
@@ -436,7 +437,7 @@ impl<L: LodVec> Iterator for ChunksInBoundIter<L> {
     }
 }
 
-pub struct ChunksInBoundAndMaybeTreeIter<'a, C: Sized, L: LodVec> {
+pub struct ChunksInBoundAndMaybeTreeIter<'a, C: Sized, L: LodVec> where [(); L::NUM_CHILDREN]:{
     // the tree
     tree: &'a Tree<C, L>,
 
@@ -453,7 +454,7 @@ pub struct ChunksInBoundAndMaybeTreeIter<'a, C: Sized, L: LodVec> {
     bound_max: L,
 }
 
-impl<'a, C: Sized, L: LodVec> Iterator for ChunksInBoundAndMaybeTreeIter<'a, C, L> {
+impl<'a, C: Sized, L: LodVec> Iterator for ChunksInBoundAndMaybeTreeIter<'a, C, L>where [(); L::NUM_CHILDREN]: {
     type Item = (L, Option<&'a C>);
 
     #[inline]
@@ -461,7 +462,7 @@ impl<'a, C: Sized, L: LodVec> Iterator for ChunksInBoundAndMaybeTreeIter<'a, C, 
         let (current_position, current_node) = self.stack.pop()?;
 
         // go over all child nodes
-        for i in 0..L::NUM_CHILDREN {
+        for i in 0..L::NUM_CHILDREN as u32{
             let position = current_position.get_child(i);
 
             // if they are in bounds, and the correct depth, add them to the stack
@@ -499,7 +500,7 @@ impl<'a, C: Sized, L: LodVec> Iterator for ChunksInBoundAndMaybeTreeIter<'a, C, 
     }
 }
 
-pub struct ChunksInBoundAndTreeIter<'a, C: Sized, L: LodVec> {
+pub struct ChunksInBoundAndTreeIter<'a, C: Sized, L: LodVec> where [(); L::NUM_CHILDREN]: {
     // the tree
     tree: &'a Tree<C, L>,
 
@@ -516,7 +517,7 @@ pub struct ChunksInBoundAndTreeIter<'a, C: Sized, L: LodVec> {
     bound_max: L,
 }
 
-impl<'a, C: Sized, L: LodVec> Iterator for ChunksInBoundAndTreeIter<'a, C, L> {
+impl<'a, C: Sized, L: LodVec> Iterator for ChunksInBoundAndTreeIter<'a, C, L> where [(); L::NUM_CHILDREN]: {
     type Item = (L, &'a C);
 
     #[inline]
@@ -524,7 +525,7 @@ impl<'a, C: Sized, L: LodVec> Iterator for ChunksInBoundAndTreeIter<'a, C, L> {
         let (current_position, current_node) = self.stack.pop()?;
 
         // go over all child nodes
-        for i in 0..L::NUM_CHILDREN {
+        for i in 0..L::NUM_CHILDREN as u32{
             let position = current_position.get_child(i);
 
             // if the node has children
@@ -546,7 +547,7 @@ impl<'a, C: Sized, L: LodVec> Iterator for ChunksInBoundAndTreeIter<'a, C, L> {
     }
 }
 
-pub struct ChunksInBoundAndMaybeTreeIterMut<'a, C: Sized, L: LodVec> {
+pub struct ChunksInBoundAndMaybeTreeIterMut<'a, C: Sized, L: LodVec>where [(); L::NUM_CHILDREN]: {
     // the tree
     tree: &'a mut Tree<C, L>,
 
@@ -563,7 +564,7 @@ pub struct ChunksInBoundAndMaybeTreeIterMut<'a, C: Sized, L: LodVec> {
     bound_max: L,
 }
 
-impl<'a, C: Sized, L: LodVec> Iterator for ChunksInBoundAndMaybeTreeIterMut<'a, C, L> {
+impl<'a, C: Sized, L: LodVec> Iterator for ChunksInBoundAndMaybeTreeIterMut<'a, C, L> where [(); L::NUM_CHILDREN]:{
     type Item = (L, Option<&'a mut C>);
 
     #[inline]
@@ -571,7 +572,7 @@ impl<'a, C: Sized, L: LodVec> Iterator for ChunksInBoundAndMaybeTreeIterMut<'a, 
         let (current_position, current_node) = self.stack.pop()?;
 
         // go over all child nodes
-        for i in 0..L::NUM_CHILDREN {
+        for i in 0..L::NUM_CHILDREN as u32{
             let position = current_position.get_child(i);
 
             // if they are in bounds, and the correct depth, add them to the stack
@@ -610,7 +611,7 @@ impl<'a, C: Sized, L: LodVec> Iterator for ChunksInBoundAndMaybeTreeIterMut<'a, 
     }
 }
 
-pub struct ChunksInBoundAndTreeIterMut<'a, C: Sized, L: LodVec> {
+pub struct ChunksInBoundAndTreeIterMut<'a, C: Sized, L: LodVec> where [(); L::NUM_CHILDREN]:{
     // the tree
     tree: &'a mut Tree<C, L>,
 
@@ -627,7 +628,7 @@ pub struct ChunksInBoundAndTreeIterMut<'a, C: Sized, L: LodVec> {
     bound_max: L,
 }
 
-impl<'a, C: Sized, L: LodVec> Iterator for ChunksInBoundAndTreeIterMut<'a, C, L> {
+impl<'a, C: Sized, L: LodVec> Iterator for ChunksInBoundAndTreeIterMut<'a, C, L> where [(); L::NUM_CHILDREN]:{
     type Item = (L, &'a mut C);
 
     #[inline]
@@ -635,7 +636,7 @@ impl<'a, C: Sized, L: LodVec> Iterator for ChunksInBoundAndTreeIterMut<'a, C, L>
         let (current_position, current_node) = self.stack.pop()?;
 
         // go over all child nodes
-        for i in 0..L::NUM_CHILDREN {
+        for i in 0..L::NUM_CHILDREN as u32{
             let position = current_position.get_child(i);
 
             // if the node has children
@@ -665,6 +666,7 @@ impl<'a, C, L> Tree<C, L>
 where
     C: Sized,
     L: LodVec,
+    [(); L::NUM_CHILDREN]:,
     Self: 'a,
 {
     /// iterate over all chunks that would be affected by an edit inside a certain bound

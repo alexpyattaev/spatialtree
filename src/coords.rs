@@ -5,7 +5,6 @@ use std::cmp::Ordering;
 
 /// A Lod Vector for use in a quadtree.
 /// It subdivides into 4 children of equal size.
-//#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Default, Debug, Hash)]
 #[derive(Copy, Clone, PartialEq, Eq, Default, Debug, Hash)]
 pub struct QuadVec {
     /// x position in the quadtree.
@@ -108,7 +107,7 @@ impl LodVec for QuadVec {
         }
     }
 
-    const NUM_CHILDREN: u32 = 4;
+    const NUM_CHILDREN: usize = 4;
 
     #[inline]
     fn root() -> Self {
@@ -235,7 +234,7 @@ impl OctVec {
     /// * `x` The x position in the tree. Allowed range scales with the depth (doubles as the depth increases by one)
     /// * `y` The y position in the tree. Allowed range scales with the depth (doubles as the depth increases by one)
     /// * `z` The z position in the tree. Allowed range scales with the depth (doubles as the depth increases by one)
-    /// * `depth` the lod depth the coord is at. This is soft limited at roughly 60, and the tree might behave weird if it gets higher.
+    /// * `depth` the lod depth the coord is at. This is soft limited at 60.
     #[inline]
     pub fn new(x: u64, y: u64, z: u64, depth: u8) -> Self {
         debug_assert!(x < (1 << depth));
@@ -310,7 +309,7 @@ impl LodVec for OctVec {
         }
     }
 
-    const NUM_CHILDREN: u32 = 8;
+    const NUM_CHILDREN: usize = 8;
 
     #[inline]
     fn root() -> Self {

@@ -10,7 +10,6 @@ For all other nodes chunks are optional.
 Benefits of this layout:
     * nodes are automatically grouped, so less operations on nodes array are needed to traverse the same depth of tree.
     * vast majority of chunks are optional, which means we can store sparse data more efficiently
-    *
 
 In this example we assume QuadVec addressing. Thus, children and chunks are both 4 elements long,
 and their encoding matches the offsets defined in appropriate fn get_child(self, index: u32).

@@ -2,7 +2,6 @@
 
 use crate::traits::*;
 
-use std::collections::{HashMap, VecDeque};
 use std::fmt::Debug;
 use std::num::NonZeroU32;
 
@@ -23,15 +22,15 @@ pub(crate) struct TreeNode {
 // children[i] will point to the TreeNode which encompasses its children
 // chunk[i] will point to the data chunk.
 // both pointers may be "None", indicating either no children, or no data
-//#[derive(Clone, Debug)]
-// pub(crate) struct TreeNode2<L: LodVec>  where [(); L::NUM_CHILDREN as usize]: {
-//     // children, these can't be the root (index 0), so we can use Some and Nonzero for slightly more compact memory
-//     // children are also contiguous, so we can assume that this to this + num children - 1 are all the children of this node
-//     pub(crate) children: [Option<NonZeroU32>; L::NUM_CHILDREN as usize],
-//
-//     // where the chunk for this node is stored
-//     pub(crate) chunk: [Option<NonZeroU32>; L::NUM_CHILDREN as usize],
-// }
+#[derive(Clone, Debug)]
+pub(crate) struct TreeNode2<L: LodVec>  where [(); L::NUM_CHILDREN]: {
+    // children, these can't be the root (index 0), so we can use Some and Nonzero for slightly more compact memory
+    // children are also contiguous, so we can assume that this to this + num children - 1 are all the children of this node
+    pub(crate) children: [Option<NonZeroU32>; L::NUM_CHILDREN],
+
+    // where the chunk for this node is stored
+    pub(crate) chunk: [Option<NonZeroU32>; L::NUM_CHILDREN],
+}
 
 // utility struct for holding actual chunks and the node that owns them
 #[derive(Clone, Debug)]
@@ -78,20 +77,21 @@ struct QueueContainer<L: LodVec> {
     node: u32,   // chunk index
     position: L, // and it's position
 }
-
+use freelist;
 // Tree holding all chunks
 // partially based on: https://stackoverflow.com/questions/41946007/efficient-and-well-explained-implementation-of-a-quadtree-for-2d-collision-det
 // assumption here is that because of the fact that we need to keep inactive chunks in memory for later use, we can keep them together with the actual nodes.
 #[derive(Clone, Debug)]
-pub struct Tree<C: Sized, L: LodVec> {
+pub struct Tree<C: Sized, L: LodVec>
+     where [(); L::NUM_CHILDREN]:{
     /// All chunks in the tree
     pub(crate) chunks: Vec<ChunkContainer<C, L>>,
-
+    pub(crate) nodes2: freelist::FreeList<TreeNode2<L>>,
     /// nodes in the Tree
     pub(crate) nodes: Vec<TreeNode>,
 
     /// list of free nodes in the Tree, to allocate new nodes into
-    free_list: VecDeque<u32>,
+    free_list: Vec<u32>,
 
     /// actual chunks to add during next update
     chunks_to_add: Vec<ToAddContainer<C, L>>,
@@ -108,15 +108,6 @@ pub struct Tree<C: Sized, L: LodVec> {
     /// internal queue for processing, that way we won't need to reallocate it
     processing_queue: Vec<QueueContainer<L>>,
 
-    /// cache size, determines the max amount of elements in the cache
-    cache_size: usize,
-
-    /// internal chunk cache
-    chunk_cache: HashMap<L, C>,
-
-    /// tracking queue, to see which chunks are oldest
-    cache_queue: VecDeque<L>,
-
     /// chunks that are going to be permamently removed, due to not fitting in the cache anymore
     chunks_to_delete: Vec<ToDeleteContainer<C, L>>,
 }
@@ -125,6 +116,7 @@ impl<C, L> Tree<C, L>
 where
     C: Sized,
     L: LodVec,
+    [(); L::NUM_CHILDREN]:
 {
     /// Gets an index in self.nodes vector from a position.
     /// If position is not pointing to a node, None is returned.
@@ -147,7 +139,7 @@ where
             current.children?;
 
             // if not, go over the node children
-            if let Some((index, found_position)) = (0..L::NUM_CHILDREN)
+            if let Some((index, found_position)) = (0..L::NUM_CHILDREN as u32)
                 .map(|i| (i, current_position.get_child(i)))
                 .find(|(_, x)| x.contains_child_node(position))
             {
@@ -163,9 +155,8 @@ where
         }
     }
 
-    /// Create a new, empty tree, with a cache of given size
-    ///  Set cache to zero to disable it entirely (may speed up certain workloads by ~50%)
-    pub fn new(cache_size: usize) -> Self {
+    /// Create a new, empty tree
+    pub fn new() -> Self {
         // make a new Tree
         // also allocate some room for nodes
         Self {
@@ -175,33 +166,28 @@ where
             chunks_to_deactivate: Vec::new(),
             chunks: Vec::new(),
             nodes: Vec::new(),
-            free_list: VecDeque::new(),
+            nodes2: freelist::FreeList::new(),
+            free_list: Vec::new(),
             processing_queue: Vec::new(),
-            cache_size,
-            chunk_cache: HashMap::with_capacity(cache_size),
-            cache_queue: VecDeque::with_capacity(cache_size),
-            chunks_to_delete: Vec::with_capacity(cache_size),
+            chunks_to_delete: Vec::new(),
         }
     }
 
     /// create a tree with preallocated memory for chunks and nodes
-    ///  Set cache to zero to disable it entirely (may speed up certain workloads by ~50%)
-    pub fn with_capacity(capacity: usize, cache_size: usize) -> Self {
+    pub fn with_capacity(capacity: usize) -> Self {
         // make a new Tree
         // also allocate some room for nodes
         Self {
-            chunks_to_add: Vec::with_capacity(capacity),
-            chunks_to_remove: Vec::with_capacity(capacity),
-            chunks_to_activate: Vec::with_capacity(capacity),
-            chunks_to_deactivate: Vec::with_capacity(capacity),
+            chunks_to_add: Vec::with_capacity(0),
+            chunks_to_remove: Vec::with_capacity(0),
+            chunks_to_activate: Vec::with_capacity(0),
+            chunks_to_deactivate: Vec::with_capacity(0),
             chunks: Vec::with_capacity(capacity),
             nodes: Vec::with_capacity(capacity),
-            free_list: VecDeque::with_capacity(capacity),
-            processing_queue: Vec::with_capacity(capacity),
-            cache_size,
-            chunk_cache: HashMap::with_capacity(cache_size),
-            cache_queue: VecDeque::with_capacity(cache_size),
-            chunks_to_delete: Vec::with_capacity(cache_size),
+            nodes2: freelist::FreeList::new(),
+            free_list: Vec::with_capacity(0),
+            processing_queue: Vec::with_capacity(0),
+            chunks_to_delete: Vec::with_capacity(0),
         }
     }
 
@@ -215,6 +201,11 @@ where
     #[inline]
     pub fn get_chunk(&self, index: usize) -> &C {
         &self.chunks[index].chunk
+    }
+    /// get a chunk as mutable
+    #[inline]
+    pub fn get_chunk_mut(&mut self, index: usize) -> &mut C {
+        &mut self.chunks[index].chunk
     }
 
     /// get a chunk by position, or none if it's not in the tree
@@ -237,11 +228,6 @@ where
         Some(&mut self.chunks[chunk_index].chunk)
     }
 
-    /// get a chunk as mutable
-    #[inline]
-    pub fn get_chunk_mut(&mut self, index: usize) -> &mut C {
-        &mut self.chunks[index].chunk
-    }
 
     /// gets a mutable pointer to a chunk
     /// This casts get_chunk_mut to a pointer underneath the hood
@@ -457,7 +443,7 @@ where
         // if we don't have a root, make one pending for creation
         if self.nodes.is_empty() {
             // chunk to add
-            let chunk_to_add = self.get_chunk_from_cache(L::root(), chunk_creator);
+            let chunk_to_add = chunk_creator(L::root());
 
             // we need to add the root as pending
             self.chunks_to_add.push(ToAddContainer {
@@ -492,10 +478,9 @@ where
             if current_node.children.is_none() {
                 //println!("adding children");
                 // add children to be added
-                for i in 0..L::NUM_CHILDREN {
+                for i in 0..L::NUM_CHILDREN as u32 {
                     // chunk to add
-                    let chunk_to_add =
-                        self.get_chunk_from_cache(current_position.get_child(i), chunk_creator);
+                    let chunk_to_add = chunk_creator(current_position.get_child(i));
 
                     // add the new chunk to be added
                     self.chunks_to_add.push(ToAddContainer {
@@ -511,7 +496,7 @@ where
             } else if let Some(index) = current_node.children {
                 //println!("has children at {index:?}");
                 // queue child nodes for processing
-                for i in 0..L::NUM_CHILDREN {
+                for i in 0..L::NUM_CHILDREN as u32 {
                     // wether we can subdivide
                     let child_pos = current_position.get_child(i);
                     //dbg!(child_pos);
@@ -577,7 +562,7 @@ where
         // if we don't have a root, make one pending for creation
         if self.nodes.is_empty() {
             // chunk to add
-            let chunk_to_add = self.get_chunk_from_cache(L::root(), chunk_creator);
+            let chunk_to_add = chunk_creator(L::root());
 
             // we need to add the root as pending
             self.chunks_to_add.push(ToAddContainer {
@@ -617,10 +602,9 @@ where
             // if we can subdivide, and the current node does not have children, subdivide the current node
             if can_subdivide && current_node.children.is_none() {
                 // add children to be added
-                for i in 0..L::NUM_CHILDREN {
+                for i in 0..L::NUM_CHILDREN as u32{
                     // chunk to add
-                    let chunk_to_add =
-                        self.get_chunk_from_cache(current_position.get_child(i), chunk_creator);
+                    let chunk_to_add =chunk_creator(current_position.get_child(i));
 
                     // add the new chunk to be added
                     self.chunks_to_add.push(ToAddContainer {
@@ -636,14 +620,14 @@ where
             } else if let Some(index) = current_node.children {
                 // otherwise, if we cant subdivide and have children, remove our children
                 if !can_subdivide
-                    && !(0..L::NUM_CHILDREN)
+                    && !(0..L::NUM_CHILDREN as u32)
                         .into_iter()
                         .any(|i| self.nodes[(i + index.get()) as usize].children.is_some())
                 {
                     // first, queue ourselves for activation
                     self.chunks_to_activate.push(current_node_index);
 
-                    for i in 0..L::NUM_CHILDREN {
+                    for i in 0..L::NUM_CHILDREN as u32{
                         // no need to do this in reverse, that way the last node removed will be added to the free list, which is also the first thing used by the adding logic
                         self.chunks_to_remove.push(ToRemoveContainer {
                             chunk: index.get() + i,
@@ -652,7 +636,7 @@ where
                     }
                 } else {
                     // queue child nodes for processing if we didn't subdivide or clean up our children
-                    for i in 0..L::NUM_CHILDREN {
+                    for i in 0..L::NUM_CHILDREN as u32{
                         self.processing_queue.push(QueueContainer {
                             position: current_position.get_child(i),
                             node: index.get() + i,
@@ -687,7 +671,7 @@ where
         {
             // remove the node from the tree
             self.nodes[parent_index as usize].children = None;
-            self.free_list.push_back(index);
+            self.free_list.push(index);
 
             // and remove the chunk
             let chunk_index = self.nodes[index as usize].chunk;
@@ -698,7 +682,7 @@ where
                 chunks_to_add_iter.next()
             {
                 // add the node
-                let new_node_index = match self.free_list.pop_front() {
+                let new_node_index = match self.free_list.pop() {
                     Some(x) => {
                         // reuse a free node
                         self.nodes[x as usize] = TreeNode {
@@ -719,39 +703,7 @@ where
                         // old chunk shouldn't be mutable anymore
                         let old_chunk = old_chunk;
 
-                        // now, we can try to add this chunk into the cache
-                        // first, remove any extra nodes if they are in the cache
-                        while self.chunk_cache.len() > self.cache_size {
-                            if let Some(chunk_position) = self.cache_queue.pop_front() {
-                                // check if the chunk is inside the map
-                                if let Some(cached_chunk) = self.chunk_cache.remove(&chunk_position)
-                                {
-                                    // if it is, it's removed, so we need to push it to the chunks that are going to be deleted
-                                    self.chunks_to_delete.push(ToDeleteContainer {
-                                        position: chunk_position,
-                                        chunk: cached_chunk,
-                                    });
-                                }
-                            } else {
-                                // just break, otherwise we'll be stuck in an infinite loop
-                                break;
-                            }
-                        }
-                        if self.cache_size > 0 {
-                            // then assign this chunk into the cache
-                            if let Some(cached_chunk) =
-                                self.chunk_cache.insert(old_chunk.position, old_chunk.chunk)
-                            {
-                                // there might have been another cached chunk
-                                self.chunks_to_delete.push(ToDeleteContainer {
-                                    position: old_chunk.position,
-                                    chunk: cached_chunk,
-                                });
-                            }
 
-                            // and make sure it's tracked
-                            self.cache_queue.push_back(old_chunk.position);
-                        }
                         x
                     }
                     // This can't be reached due to us *always* adding a chunk to the free list before popping it
@@ -762,47 +714,16 @@ where
                 // because the last node we come by in with ordered iteration is on num_children - 1, we need to set it as such].
                 // node 0 is the root, so the last child it has will be on num_children.
                 // then subtracting num_children - 1 from that gives us node 1, which is the first child of the root.
-                if new_node_index >= L::NUM_CHILDREN {
+                if new_node_index >= L::NUM_CHILDREN as u32 {
                     // because we loop in order, and our nodes are contiguous, the first node of the children got added on index i - (num children - 1)
                     // so we need to adjust for that
                     self.nodes[parent_index as usize].children =
-                        NonZeroU32::new(new_node_index - (L::NUM_CHILDREN - 1));
+                        NonZeroU32::new(new_node_index - (L::NUM_CHILDREN - 1) as u32);
                 }
             } else {
                 // otherwise we do need to do a regular swap remove
                 let old_chunk = self.chunks.swap_remove(chunk_index as usize);
 
-                // now, we can try to add this chunk into the cache
-                // first, remove any extra nodes if they are in the cache
-                while self.chunk_cache.len() > self.cache_size {
-                    if let Some(chunk_position) = self.cache_queue.pop_front() {
-                        // check if the chunk is inside the map
-                        if let Some(cached_chunk) = self.chunk_cache.remove(&chunk_position) {
-                            // if it is, it's removed, so we need to push it to the chunks that are going to be deleted
-                            self.chunks_to_delete.push(ToDeleteContainer {
-                                position: chunk_position,
-                                chunk: cached_chunk,
-                            });
-                        }
-                    } else {
-                        // just break, otherwise we'll be stuck in an infinite loop
-                        break;
-                    }
-                }
-                if self.cache_size > 0 {
-                    //then assign this chunk into the cache
-                    if let Some(cached_chunk) =
-                        self.chunk_cache.insert(old_chunk.position, old_chunk.chunk)
-                    {
-                        // there might have been another cached chunk
-                        self.chunks_to_delete.push(ToDeleteContainer {
-                            position: old_chunk.position,
-                            chunk: cached_chunk,
-                        });
-                    }
-                    // and make sure it's tracked
-                    self.cache_queue.push_back(old_chunk.position);
-                }
             }
 
             // and properly set the chunk pointer of the node of the chunk we just moved, if any
@@ -816,7 +737,7 @@ where
         // we'll drain the vector here as well, as we won't need it anymore afterward
         for ToAddContainer { position, chunk, parent_node_index:parent_index } in chunks_to_add_iter {
             // add the node
-            let new_node_index = match self.free_list.pop_front() {
+            let new_node_index = match self.free_list.pop() {
                 Some(x) => {
                     // reuse a free node
                     self.nodes[x as usize] = TreeNode {
@@ -849,11 +770,11 @@ where
             // because the last node we come by in with ordered iteration is on num_children - 1, we need to set it as such].
             // node 0 is the root, so the last child it has will be on num_children.
             // then subtracting num_children - 1 from that gives us node 1, which is the first child of the root.
-            if new_node_index >= L::NUM_CHILDREN {
+            if new_node_index >= L::NUM_CHILDREN as u32 {
                 // because we loop in order, and our nodes are contiguous, the first node of the children got added on index i - (num children - 1)
                 // so we need to adjust for that
                 self.nodes[parent_index as usize].children =
-                    NonZeroU32::new(new_node_index - (L::NUM_CHILDREN - 1));
+                    NonZeroU32::new(new_node_index - (L::NUM_CHILDREN - 1) as u32);
             }
         }
 
@@ -895,17 +816,13 @@ where
         self.chunks_to_deactivate.clear();
         self.chunks_to_delete.clear();
         self.processing_queue.clear();
-        self.cache_queue.clear();
-        self.chunk_cache.clear();
     }
 
     /// Shrinks all internal buffers to fit, reducing memory usage.
     /// Due to most of the intermediate processing buffers being cleared after an update is done, the next update might take longer due to needing to reallocate the memory.
     #[inline]
     pub fn shrink(&mut self) {
-        // it should be possible to also shrink the nodes as well, and remove the free space, but this would be rather dificult to do
-        // because we have groups of num_children
-        // I'm leaving it out for now
+        // todo: rebuild the tree nodes from scratch
         self.chunks.shrink_to_fit();
         self.nodes.shrink_to_fit();
         self.free_list.shrink_to_fit();
@@ -915,36 +832,21 @@ where
         self.chunks_to_deactivate.shrink_to_fit();
         self.chunks_to_delete.shrink_to_fit();
         self.processing_queue.shrink_to_fit();
-        self.cache_queue.shrink_to_fit();
     }
 
-    /// resizes the current cache size
-    /// actual resizing happens on the next update
-    #[inline]
-    pub fn set_cache_size(&mut self, cache_size: usize) {
-        self.cache_size = cache_size;
-    }
 
-    // gets a chunk from the cache, otehrwise generates one from the given function
-    #[inline]
-    fn get_chunk_from_cache(&mut self, position: L, chunk_creator: &mut dyn FnMut(L) -> C) -> C {
-        if self.cache_size > 0 {
-            if let Some(chunk) = self.chunk_cache.remove(&position) {
-                return chunk;
-            }
-        }
-        chunk_creator(position)
-    }
+
 }
 
 impl<C, L> Default for Tree<C, L>
 where
     C: Sized,
     L: LodVec,
+    [(); L::NUM_CHILDREN as usize]:
 {
     /// creates a new, empty tree, with no cache
     fn default() -> Self {
-        Self::new(0)
+        Self::new()
     }
 }
 
@@ -959,7 +861,7 @@ mod tests {
     #[test]
     fn update_tree() {
         // make a tree
-        let mut tree = Tree::<TestChunk, QuadVec>::new(64);
+        let mut tree = Tree::<TestChunk, QuadVec>::new();
         // as long as we need to update, do so
         for tgt in [QuadVec::new(1, 1, 2), QuadVec::new(2, 3, 2)] {
             dbg!(tgt);
@@ -987,7 +889,7 @@ mod tests {
     #[test]
     fn insert_into_tree() {
         // make a tree
-        let mut tree = Tree::<TestChunk, QuadVec>::new(64);
+        let mut tree = Tree::<TestChunk, QuadVec>::new();
         // as long as we need to update, do so
         for tgt in [
             QuadVec::new(1, 1, 1),

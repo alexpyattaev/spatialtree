@@ -13,8 +13,9 @@ categories = ["data-structures"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+freelist = "0.1.0"
 
-[dev_dependencies]
+[dev-dependencies]
 rayon = "1.5"
 glium = "0.30"
 rand ={version="0.8.5", features=['small_rng']}
@@ -23,4 +24,8 @@ criterion = {version="0.3", features=['html_reports']}
 
 [[bench]]
 name = "iterators"
+harness = false
+
+[[bench]]
+name = "freelist"
 harness = false

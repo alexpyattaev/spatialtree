@@ -1,3 +1,6 @@
+#![feature(generic_const_exprs)]
+
+
 use lodtree::coords::OctVec;
 use lodtree::Tree;
 use rand::rngs::SmallRng;
