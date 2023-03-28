@@ -1,5 +1,5 @@
-#![allow(incomplete_features)]
-#![feature(generic_const_exprs)]
+//#![allow(incomplete_features)]
+//#![feature(generic_const_exprs)]
 //! # LodTree
 //! LodTree, a simple tree data structure for doing chunk-based level of detail.
 //!
@@ -168,10 +168,13 @@
 //! Getters are also given for all chunk groups, in the flavor of get a chunk, get a mutable chunk, get a mutable pointer to a chunk and get the position of a chunk.
 
 pub mod coords;
-pub mod iter;
-pub mod traits;
-pub mod tree;
+pub mod util_funcs;
+//pub mod iter;
+//pub mod tree;
+pub mod freelist;
+//pub use crate::iter::*;
+pub use crate::coords::*;
+//pub use crate::tree::*;
+pub use crate::freelist::*;
+pub use crate::util_funcs::*;
 
-pub use crate::iter::*;
-pub use crate::traits::*;
-pub use crate::tree::*;

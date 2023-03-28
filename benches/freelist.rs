@@ -1,27 +1,24 @@
-#![feature(generic_const_exprs)]
+//#![feature(generic_const_exprs)]
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};
-use freelist::{FreeList, Idx};
+use freelist as libfreelist;
+use lodtree::freelist::FreeList;
 use std::ops::Index;
 
-struct VecFreeList<T>{
-    data: Vec<T>,
-    empty: Vec<u16>,
-}
 
 
 trait FlHarness{
     fn new()->Self;
     fn add(&mut self, d:u32)->usize;
     fn erase(&mut self, idx:usize);
-    fn get_value(&self, index: Idx)->&u32;
+    fn get_value(&self, index: usize)->&u32;
 }
 
-impl FlHarness for FreeList<u32>
+impl FlHarness for libfreelist::FreeList<u32>
 {
     fn new()->Self {
-        FreeList::new()
+        libfreelist::FreeList::new()
     }
 
     fn add(&mut self,d:u32)->usize {
@@ -29,40 +26,33 @@ impl FlHarness for FreeList<u32>
     }
 
     fn erase(&mut self,idx:usize) {
-        self.remove(Idx::new(idx).unwrap())
+        self.remove(libfreelist::Idx::new(idx).unwrap())
     }
-    fn get_value(&self, index: Idx) -> &u32 {
-        self.index(index)
+    fn get_value(&self, index: usize) -> &u32 {
+        self.index(libfreelist::Idx::new(index).unwrap())
     }
 
 }
 
-impl FlHarness for VecFreeList<u32>
+impl <DT:lodtree::Indexer> FlHarness for FreeList<u32,DT>
 {
     fn new()->Self {
-        Self{data:vec![], empty:vec![]}
+        FreeList::new()
     }
 
     fn add(&mut self,d:u32)->usize {
-        match self.empty.pop(){
-            Some(idx)=>{
-                self.data[idx as usize] = d;
-                idx as usize
-            },
-            None=>{
-                self.data.push(d);
-                self.data.len()
-            }
-        }
+        self.add(d) as usize
     }
 
     fn erase(&mut self,idx:usize) {
-        self.empty.push(idx as u16)
+        self.remove(idx);
     }
-    fn get_value(&self, index: Idx) -> &u32 {
-        &self.data[index.get()]
+    fn get_value(&self, index: usize) -> &u32 {
+        self.index(index)
     }
 }
+
+
 
 fn fill_freelist<FL:FlHarness>(n:usize, rng:&mut SmallRng)->FL
 {
@@ -81,7 +71,7 @@ where FL:FlHarness
     let mut rng = SmallRng::seed_from_u64(42);
     let samples_num = 10;
 
-    for depth in [48, 1024, 4096*64].iter() {
+    for depth in [50,/* 1000, 100000*/].iter() {
 
         group.significance_level(0.1).sample_size(samples_num);
         group.bench_with_input(BenchmarkId::from_parameter(depth), depth, |b, &depth| {
@@ -90,10 +80,17 @@ where FL:FlHarness
                 let mut lst: FL = fill_freelist(depth, &mut rng);
                 let mut x:u32 = 0;
                 for n in 1..depth {
-                    x += lst.get_value(Idx::new(n).unwrap());
+                    x += lst.get_value(n);
                     lst.erase(n);
                 }
 
+                for n in 0..depth {
+                    lst.add(n as u32);
+                }
+                for n in 1..depth {
+                    x += lst.get_value(n);
+                    lst.erase(n);
+                }
                 for n in 0..depth {
                     lst.add(n as u32);
                 }
@@ -106,13 +103,13 @@ where FL:FlHarness
 
 
 pub fn freelist_library(c: &mut Criterion) {
-    freelist_eval::<FreeList<u32>>(c,"freelist library");
+    freelist_eval::<libfreelist::FreeList<u32>>(c,"freelist library");
 }
 
-pub fn freelist_vec(c: &mut Criterion) {
-    freelist_eval::<VecFreeList<u32>>(c,"freelist vec");
+pub fn freelist_inhouse(c: &mut Criterion) {
+    freelist_eval::<FreeList<u32, isize>>(c,"freelist inhouse");
 }
 
 
-criterion_group!(benches,freelist_library,freelist_vec);
+criterion_group!(benches,freelist_library,freelist_inhouse);
 criterion_main!(benches);

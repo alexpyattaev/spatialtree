@@ -1,5 +1,5 @@
 //! Iterators over chunks
-use crate::traits::*;
+use crate::coords::*;
 use crate::tree::*;
 
 // implements all iterators for the given functions
@@ -28,14 +28,14 @@ macro_rules! impl_all_iterators {
 	) => {
         // define the struct
         #[doc=concat!("Iterator for chunks, see ", stringify!($func_name), "() under Tree for documentation")]
-		pub struct $name<'a, C: Sized, L: LodVec> where [(); L::NUM_CHILDREN]: {
-            tree: &'a Tree<C, L>,
+		pub struct $name<'a, const N:usize, C: Sized, L: LodVec<N>> where [(); L::NUM_CHILDREN]: {
+            tree: &'a Tree<N, C, L>,
             index: usize,
         }
 
 		#[doc=concat!("Iterator for mutable chunks, see ", stringify!($func_name_mut), "() under Tree for documentation")]
-        pub struct $name_mut<'a, C: Sized, L: LodVec> where [(); L::NUM_CHILDREN]:{
-            tree: &'a mut Tree<C, L>,
+        pub struct $name_mut<'a, const N:usize, C: Sized, L: LodVec<N>> where [(); L::NUM_CHILDREN]:{
+            tree: &'a mut Tree<N, C, L>,
             index: usize,
         }
 
@@ -378,28 +378,7 @@ impl_all_iterators!(
     iter_chunks_to_remove_and_positions_mut,
 );
 
-// to delete
-impl_all_iterators!(
-    ChunkToDeleteIter,
-    ChunkToDeleteIterMut,
-    PositionToDeleteIter,
-    ChunkAndPositionToDeleteIter,
-    ChunkAndPositionIterToDeleteMut,
-    get_num_chunks_to_delete,
-    get_chunk_to_delete,
-    get_chunk_to_delete_pointer_mut,
-    get_position_of_chunk_to_delete,
-    /// returns an iterator over all chunks to delete
-    iter_chunks_to_delete,
-    /// returns an iterator over all chunks to delete, mutable
-    iter_chunks_to_delete_mut,
-    /// returns an iterator over all positions of all chunks to delete
-    iter_chunks_to_delete_positions,
-    /// returns an iterator over all chunks to delete and their positions
-    iter_chunks_to_delete_and_positions,
-    /// returns an iterator over all chunks to delete as mutable and their positions
-    iter_chunks_to_delete_and_positions_mut,
-);
+
 
 // iterator for all chunks that are inside given bounds
 pub struct ChunksInBoundIter<L: LodVec> {
@@ -903,7 +882,7 @@ mod tests {
             Chunk { visible }
         }
 
-        let mut tree = Tree::new(65);
+        let mut tree = Tree::new();
         let qv = OctVec::new(R, R, R, D);
         while tree.prepare_update(&[qv], R as u32, &mut chunk_creator) {
             // do the update

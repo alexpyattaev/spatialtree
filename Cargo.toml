@@ -10,12 +10,15 @@ keywords = ["lod", "terrain", "octree", "quadtree", "tree"]
 categories = ["data-structures"]
 
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
 freelist = "0.1.0"
+itertools = "0.10.5"
+num = "0.4.0"
+soa_derive = "0.12.0"
+
 
 [dev-dependencies]
+lru = "0.10.0"
 rayon = "1.5"
 glium = "0.30"
 rand ={version="0.8.5", features=['small_rng']}
@@ -28,4 +31,8 @@ harness = false
 
 [[bench]]
 name = "freelist"
+harness = false
+
+[[bench]]
+name = "coordinates"
 harness = false

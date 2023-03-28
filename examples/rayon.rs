@@ -52,6 +52,8 @@ fn main() {
                 "Took {} microseconds to get the tree update ready",
                 duration
             );
+            //TODO: rewrite this to use chunks_add callback which modifies captured Vec and pushes chunk references
+            // in there for thread pool to consume later.
 
             // if there was an update, we need to first generate new chunks with expensive_init
             tree.get_chunks_to_add_slice_mut().par_iter_mut().for_each(

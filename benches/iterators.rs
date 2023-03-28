@@ -1,3 +1,5 @@
+use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+/*
 #![feature(generic_const_exprs)]
 
 
@@ -6,7 +8,7 @@ use lodtree::Tree;
 use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};
 
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+
 
 const N_LOOKUPS: usize = 40;
 fn generate_area_bounds(rng: &mut SmallRng) -> (OctVec, OctVec) {
@@ -46,7 +48,7 @@ impl Default for ChuChunk {
 
 fn create_and_fill_octree<C: Default>(num_chunks: u32, depth: u8) -> Tree<C, OctVec> {
     let mut rng = SmallRng::seed_from_u64(42);
-    let mut tree: Tree<C, OctVec> = Tree::with_capacity(0, 0);
+    let mut tree: Tree<C, OctVec> = Tree::with_capacity(num_chunks as usize);
 
     let cmax = 1 << depth;
 
@@ -170,6 +172,14 @@ pub fn bench_creation(c: &mut Criterion) {
     }
     group.finish();
 }
+*/
 
+pub fn bench_creation(c: &mut Criterion){
+
+}
+pub fn bench_iteration(c: &mut Criterion){
+
+}
 criterion_group!(benches, bench_creation, bench_iteration);
 criterion_main!(benches);
+
