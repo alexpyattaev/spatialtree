@@ -6,13 +6,31 @@ use freelist as libfreelist;
 use lodtree::freelist::FreeList;
 use std::ops::Index;
 
-
+use slab::Slab;
 
 trait FlHarness{
     fn new()->Self;
     fn add(&mut self, d:u32)->usize;
     fn erase(&mut self, idx:usize);
     fn get_value(&self, index: usize)->&u32;
+}
+
+impl FlHarness for Slab<u32>{
+    fn new()->Self {
+        Slab::with_capacity(4)
+    }
+
+    fn add(&mut self, d:u32)->usize {
+        self.insert(d)
+    }
+
+    fn erase(&mut self, idx:usize) {
+        self.remove(idx);
+    }
+
+    fn get_value(&self, index: usize)->&u32 {
+        &self[index]
+    }
 }
 
 impl FlHarness for libfreelist::FreeList<u32>
@@ -37,7 +55,7 @@ impl FlHarness for libfreelist::FreeList<u32>
 impl <DT:lodtree::Indexer> FlHarness for FreeList<u32,DT>
 {
     fn new()->Self {
-        FreeList::new()
+        FreeList::with_capacity(4)
     }
 
     fn add(&mut self,d:u32)->usize {
@@ -107,9 +125,13 @@ pub fn freelist_library(c: &mut Criterion) {
 }
 
 pub fn freelist_inhouse(c: &mut Criterion) {
-    freelist_eval::<FreeList<u32, isize>>(c,"freelist inhouse");
+    freelist_eval::<FreeList<u32, isize>>(c,"freelist inhouse isize");
+}
+
+pub fn freelist_slab(c: &mut Criterion) {
+    freelist_eval::<Slab<u32>>(c,"freelist slab");
 }
 
 
-criterion_group!(benches,freelist_library,freelist_inhouse);
+criterion_group!(benches,freelist_library,freelist_inhouse,freelist_slab);
 criterion_main!(benches);

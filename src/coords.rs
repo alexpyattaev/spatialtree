@@ -2,19 +2,28 @@
 
 use std::cmp::Ordering;
 
-
+fn a(){
+    const X:u64 = u64::BITS - (5 as u64).ilog2() as u64;
+}
 
 pub trait LodVec<const N: usize>:
 std::hash::Hash + Eq + Sized + Copy + Clone + Send + Sync +std::fmt::Debug
 {
     const MAX_CHILDREN : usize  = 1<<N;
-
+//const GGG:usize = N.l
     /// gets one of the child node position of this node, defined by it's index.
     fn get_child(self, index: usize) -> Self;
+
+    /// returns index of child for a given child position (reciprocal of get_child)
+    fn get_child_index(self, child: Self) -> usize;
+
+
     /// the number of child nodes a node can have in the tree.
     fn contains_child_node(self, child: Self) -> bool ;
+
     /// returns the lod vector as if it's at the root of the tree.
     fn root() -> Self;
+
 
     /// wether the node can subdivide, compared to another node and the required detail.
     ///
@@ -73,7 +82,10 @@ std::hash::Hash + Eq + Sized + Copy + Clone + Send + Sync +std::fmt::Debug
 
 }
 
-pub trait ReasonableIntegerLike: Default+num::Integer+ std::marker::Send+ std::marker::Sync+std::fmt::Debug+Copy+std::hash::Hash + std::ops::Shl<isize, Output = Self> + std::ops::Shr<isize, Output = Self> + std::ops::BitAnd<Self, Output = Self> {
+pub trait ReasonableIntegerLike: Default+num::Integer+ std::marker::Send+ std::marker::Sync+std::fmt::Debug+Copy+std::hash::Hash
++ std::ops::Shl<isize, Output = Self> + std::ops::Shr<isize, Output = Self>
++ std::ops::Shl<usize, Output = Self> + std::ops::Shr<usize, Output = Self>
++ std::ops::BitAnd<Self, Output = Self> {
     fn fromusize(value: usize) -> Self;
     fn tousize(self) -> usize;
 }
@@ -101,11 +113,46 @@ reasonable_int_impl!(u64);
 #[cfg(test)]
 mod tests{
 use std::mem::size_of;
-use crate::coords::{OctVec,QuadVec};
+use crate::coords::*;
+
 #[test]
 fn sizes(){
     assert_eq!(3,size_of::<QuadVec>());
     assert_eq!(4,size_of::<OctVec>());
+
+}
+#[test]
+fn find_child_idx(){
+    // create root
+    let z = OctVec::<u8>::root();
+    // loop over possible children
+    for i in 0..OctVec::<u8>::MAX_CHILDREN{
+        // get child of z with index i
+        let c = z.get_child(i);
+        // recover its index based on coords
+        let ci = z.get_child_index(c);
+        // make sure they are identical
+        assert_eq!(ci,i);
+
+        for j in 0..OctVec::<u8>::MAX_CHILDREN{
+            // get child of c
+            let cc = c.get_child(j);
+            // and its index
+            let cci = c.get_child_index(cc);
+            println!("{}->{} ({}->{}): {:?}->{:?} ",i,j,ci,cci, c, cc);
+            assert_eq!(cci, j);
+            // we can also get index w.r.t. previous levels
+            let czi = z.get_child_index(cc);
+            assert_eq!(czi, i);
+            // and we can go deeper too...
+            for k in  0..OctVec::<u8>::MAX_CHILDREN{
+                let ccc = cc.get_child(k);
+                assert_eq!(z.get_child_index(ccc), i);
+                assert_eq!(c.get_child_index(ccc), j);
+                assert_eq!(cc.get_child_index(ccc), k);
+            }
+        }
+    }
 
 }
 
@@ -139,11 +186,9 @@ where  DT: ReasonableIntegerLike
 
 
     /// creates a new vector from floating point coords.
-    /// mapped so that (0, 0, 0) is the front bottom left corner and (1, 1, 1) is the back top right.
+    /// mapped so that e.g. (0, 0, 0) is the front bottom left corner and (1, 1, 1) is the back top right.
     /// # Args
-    /// * `x` x coord of the float vector, from 0 to 1
-    /// * `y` y coord of the float vector, from 0 to 1
-    /// * `z` z coord of the float vector, from 0 to 1
+    /// * `pos` coordinates of the float vector, from 0 to 1
     /// * `depth` The lod depth of the coord
     #[inline]
     pub fn from_float_coords(pos:[f32;N], depth: u8) -> Self {
@@ -158,7 +203,7 @@ where  DT: ReasonableIntegerLike
     }
 
     /// converts the coord into float coords.
-    /// Returns a tuple of (x: f64, y: f64, z: f64) to represent the coordinates, at the front bottom left corner.
+    /// Returns a slice of f64 to represent the coordinates, at the front bottom left corner.
     #[inline]
     pub fn float_coords(self) -> [f32;N] {
         // scaling factor to scale the coords down with
@@ -183,28 +228,43 @@ where DT:ReasonableIntegerLike
     #[inline]
     fn get_child(self, index: usize) -> Self {
         debug_assert!(index < <CoordVec<N> as LodVec<N>>::MAX_CHILDREN);
-        // the positions, doubled in scale
-
         let mut new = Self::root();
-        let one = DT::fromusize(1 as usize);
-        let index = DT::fromusize(index);
+        //println!("GetChild for {:?} idx {}", self,index);
         for i in 0..N{
+            let p_doubled = self.pos[i].tousize() << 1;
 
-            new.pos[i] = (new.pos[i] <<1) + (index & (one<<i as isize));
+            let p = p_doubled + ((index & (1<<i))>>i);
+            //dbg!(i, p_doubled, p);
+            new.pos[i] = DT::fromusize(p);
         }
         new.depth = self.depth + 1;
         new
     }
 
+    fn get_child_index(self, child: Self) -> usize{
+        debug_assert!(self.depth < child.depth);
+        let level_difference = child.depth - self.depth;
+        //let one = DT::fromusize(1 as usize);
+        let mut idx:usize = 0;
+        for i in 0..N {
+            //scale up own base pos
+            let sp = self.pos[i].tousize() << level_difference;
+            let pi = (child.pos[i].tousize() - sp) >> (level_difference-1);
+            //dbg!(i, sp, pi);
+            idx |= pi <<i;
+        }
+        idx
+    }
+
     fn contains_child_node(self, child: Self) -> bool {
         // basically, move the child node up to this level and check if they're equal
-        let level_difference = child.depth as isize - self.depth as isize ;
+        let level_difference = child.depth as isize - self.depth as isize;
         self.pos.iter().zip(child.pos).all(|(s, c)|{*s == (c>>level_difference)})
     }
 
     fn is_inside_bounds(self, min: Self, max: Self, max_depth: u8) -> bool {
         // get the lowest lod level
-        let level = self.depth.min(min.depth.min(max.depth)) as isize;
+        let level = *[self.depth,min.depth,max.depth].iter().min().unwrap() as isize;
 
         // bring all coords to the lowest level
         let self_difference:isize = self.depth as isize - level;
@@ -220,7 +280,7 @@ where DT:ReasonableIntegerLike
 
         // then check if we are inside the AABB
         self.depth <= max_depth &&
-        itertools::izip!(self_lowered,min_lowered, max_lowered)
+        itertools::izip!(self_lowered, min_lowered, max_lowered)
         .all(|(slf, min, max)|{slf>=min && slf <=max })
     }
 

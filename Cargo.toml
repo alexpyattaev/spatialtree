@@ -14,6 +14,7 @@ categories = ["data-structures"]
 freelist = "0.1.0"
 itertools = "0.10.5"
 num = "0.4.0"
+slab = "0.4.8"
 soa_derive = "0.12.0"
 
 
@@ -36,3 +37,13 @@ harness = false
 [[bench]]
 name = "coordinates"
 harness = false
+
+[profile.release]
+opt-level=3
+overflow-checks = false
+debug=0
+strip = "symbols"
+debug-assertions=false
+lto="fat"
+#panic="abort"
+codegen-units=16

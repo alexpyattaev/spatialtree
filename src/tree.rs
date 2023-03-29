@@ -18,19 +18,25 @@ pub type RelPtr=Option<NonZeroU32>;
 ///  - chunk[i] will point to the data chunk.
 /// both pointers may be "None", indicating either no children, or no data
 #[derive(Clone, Debug)]
-pub(crate) struct TreeNode<const N:usize, L: LodVec<N>>  {
-    // children, these can't be the root (index 0), so we can use Some and Nonzero for slightly more compact memory
-    pub(crate) children: [RelPtr; NUM_CHILDREN],
+pub(crate) struct TreeNode<const N:usize,  L: LodVec<N>>
+where [(); L::MAX_CHILDREN]:
+{
+    /// children, these can't be the root (index 0), so we can use Some and Nonzero for slightly more compact memory
+    pub(crate) children: [RelPtr; L::MAX_CHILDREN],
+    // One day this will work on stable:
 
-    // where the chunks for particular children is stored (if any)
-    pub(crate) chunk: [RelPtr; NUM_CHILDREN],
+
+    /// where the chunks for particular children is stored (if any)
+    pub(crate) chunk: [RelPtr; L::MAX_CHILDREN],
 }
 
-impl <const N:usize, L: LodVec<N>>TreeNode<N, L>{
+impl <const N:usize,  L: LodVec<N>>TreeNode<N,  L>
+where [(); L::MAX_CHILDREN]:
+{
     fn new()->Self{
         Self{
-            children: [RelPtr::None;N],
-            chunk:[RelPtr::None;N],
+            children: [RelPtr::None;L::MAX_CHILDREN],
+            chunk:[RelPtr::None;L::MAX_CHILDREN],
         }
     }
 }
@@ -70,16 +76,19 @@ struct QueueContainer<const N:usize,L: LodVec<N>> {
     node: u32,   // chunk index
     position: L, // and it's position
 }
-use freelist::{FreeList, Idx};
+
+use slab::Slab;
 
 // Tree holding the actual data permanently in memory.
 // partially based on: https://stackoverflow.com/questions/41946007/efficient-and-well-explained-implementation-of-a-quadtree-for-2d-collision-det
 #[derive(Clone, Debug)]
-pub struct Tree<const N:usize, C: Sized, L: LodVec<N>>{
+pub struct Tree<const N:usize, C: Sized, L: LodVec<N>>
+where [(); L::MAX_CHILDREN]:
+{
     /// All chunks in the tree
-    pub(crate) chunks: FreeList<ChunkContainer<N, C, L>>,
+    pub(crate) chunks: Slab<ChunkContainer<N, C, L>>,
     /// nodes in the Tree
-    pub(crate) nodes: FreeList<TreeNode<N,L>>,
+    pub(crate) nodes: Slab<TreeNode<N,L>>,
 
     /// indices of the chunks that need to be activated (i.e. the chunks that have just lost children)
     //chunks_to_activate: Vec<u32>,
@@ -91,70 +100,72 @@ pub struct Tree<const N:usize, C: Sized, L: LodVec<N>>{
     processing_queue: Vec<QueueContainer<N, L>>,
 }
 
+
+
+struct IdxPos<const N:usize, L:LodVec<N>> {
+    idx:usize,
+    pos: L,
+}
+
 impl<const N:usize, C, L> Tree<N, C, L>
 where
     C: Sized,
     L: LodVec<N>,
+    [(); L::MAX_CHILDREN]:
 {
-    /// Create a new, empty tree
+    /// Create a new, "empty" tree which only has the root node.
     pub fn new() -> Self {
+        Self::with_capacity(1, 1)
+    }
 
+    /// create a tree with preallocated memory for chunks and nodes
+    pub fn with_capacity(nodes_capacity: usize, chunks_capacity:usize) -> Self {
+        debug_assert!(nodes_capacity > 1);
+        debug_assert!(chunks_capacity > 1);
+        let mut nodes = Slab::with_capacity(nodes_capacity);
         // create root node right away, no point having a tree without a root.
-        let mut nodes = FreeList::new();
-        nodes.add(TreeNode::new());
+        let r = nodes.insert(TreeNode::new());
+        //Slab always returns 0 for index of first inserted element, right? Better check...
+        debug_assert_eq!(r, 0);
+
+        let mut chunks= Slab::with_capacity(chunks_capacity);
+
         Self {
             /*chunks_to_add: Vec::new(),
              *            chunks_to_remove: Vec::new(),
              *            chunks_to_activate: Vec::new(),
              *            chunks_to_deactivate: Vec::new(),*/
-            chunks: FreeList::new(),
+            chunks,
             nodes,
-            processing_queue: Vec::new(),
+            processing_queue: Vec::with_capacity(4),
         }
     }
 
-    /// create a tree with preallocated memory for chunks and nodes
-    pub fn with_capacity(_capacity: usize) -> Self {
-        // TODO: make sure freelist has with_capacity
-        // TODO: make capacity make sense
-        Self::new()
-    }
 
-
-    /// Gets the node vector from a position.
-    /// If position is not pointing to a node in tree, None is returned.
-    fn get_node_by_position(&self, position: L) -> Option<&mut TreeNode<N,L>> {
-        // the current node
-        let mut current = unsafe{self.nodes.get_unchecked_mut(0)};
-
-        // and position
-        let mut current_position = L::root();
+    /// Gets the node controlling the desired position.
+    /// If exact match is found, returns Ok variant, else Err variant with nearest match.
+    fn follow_nodes_to_position(&self, position: L) -> Result<&mut TreeNode<N, L>,&mut TreeNode<N, L>> {
+        // start in root
+        let mut addr = IdxPos{idx:0, pos:L::root()};
 
         // then loop
         loop {
-            // if the current node is the one we are looking for, return
-            if current_position == position {
-                return Some(current.chunk as usize);
+            // SAFETY: the node hierarchy should be sound
+            //let mut current = unsafe{self.nodes.get_unchecked_mut(current_idx)};
+            let mut current = self.nodes.get_mut(addr.idx).unwrap();
+            // compute child index & position towards target
+            let child_idx = addr.pos.get_child_index(position);
+            let child_pos = addr.pos.get_child(child_idx);
+            // if the current node is the one we are looking for, return it
+            if child_pos == position {
+                return Ok(current);
             }
 
-            // if the current node does not have children, stop
-            // this works according to clippy
-            current.children?;
-
-            // if not, go over the node children
-            if let Some((index, found_position)) = (0..L::NUM_CHILDREN as u32)
-                .map(|i| (i, current_position.get_child(i)))
-                .find(|(_, x)| x.contains_child_node(position))
-            {
-                // we found the position to go to
-                current_position = found_position;
-
-                // and the node is at the index of the child nodes + index
-                current = self.nodes[(current.children.unwrap().get() + index) as usize];
-            } else {
-                // if no child got found that matched the item, return none
-                return None;
-            }
+            // assuming the child index points to an existing child node, follow it.
+            addr = match current.children[child_idx]{
+                Some(idx)=>IdxPos{idx:idx.get() as usize, pos: addr.pos.get_child(child_idx)},
+                None=> {return Err(current);}
+            };
         }
     }
 
@@ -162,20 +173,19 @@ where
     /// get the number of chunks in the tree
     #[inline]
     pub fn get_num_chunks(&self) -> usize {
-        todo!()
-        //self.chunks.len()
+        self.chunks.len()
     }
 
     /// get a chunk
     #[inline]
     pub fn get_chunk(&self, index: usize) -> &C {
-        &self.chunks[Idx::new(index)].chunk
+        &self.chunks[index].chunk
     }
 
     /// get a chunk as mutable
     #[inline]
     pub fn get_chunk_mut(&mut self, index: usize) -> &mut C {
-        &mut self.chunks[Idx::new(index)].chunk
+        &mut self.chunks[index].chunk
     }
 
 
@@ -183,20 +193,21 @@ where
     #[inline]
     pub fn get_chunk_by_position(&self, position: L) -> Option<&C> {
         // get the index of the chunk
-        let chunk_index = self.get_node_index_from_position(position)?;
-
+        let node = self.follow_nodes_to_position(position).ok()?;
+        //node.children
+        let chunk_index=todo!();
         // and return the chunk
-        Some(&self.chunks[Idx::new(chunk_index)].chunk)
+        Some(&self.chunks[chunk_index].chunk)
     }
 
     /// get a mutable chunk by position, or none if it's not in the tree
     #[inline]
     pub fn get_chunk_from_position_mut(&mut self, position: L) -> Option<&mut C> {
         // get the index of the chunk
-        let chunk_index = self.get_node_index_from_position(position)?;
-
+        let node = self.follow_nodes_to_position(position).ok()?;
+        let chunk_index=todo!();
         // and return the chunk
-        Some(&mut self.chunks[Idx::new(chunk_index)].chunk)
+        Some(&mut self.chunks[chunk_index].chunk)
     }
 
 
@@ -271,7 +282,7 @@ where
             if current_node.children.is_none() {
                 //println!("adding children");
                 // add children to be added
-                for i in 0..L::NUM_CHILDREN as u32 {
+                for i in 0..L::MAX_CHILDREN as u32 {
                     // chunk to add
                     let chunk_to_add = chunk_creator(current_position.get_child(i));
 
@@ -520,6 +531,7 @@ impl<const N:usize, C, L> Default for Tree<N, C, L>
 where
     C: Sized,
     L: LodVec<N>,
+    [(); L::MAX_CHILDREN]:
 {
     /// creates a new, empty tree, with no cache
     fn default() -> Self {

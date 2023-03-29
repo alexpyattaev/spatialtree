@@ -1,6 +1,6 @@
 use std::{
     ops::{Deref, Index, IndexMut},
-    mem::{ManuallyDrop, MaybeUninit},
+    mem::ManuallyDrop,
     cmp::Eq,
 };
 
@@ -8,7 +8,7 @@ use std::{
 
 pub trait Indexer:Eq+Clone+Copy+core::fmt::Debug{
     /// Cast to usize
-    fn usize(&self)->usize;
+    fn usize(self)->usize;
 
     /// Generate valid reference from index x (does not check if x is actually valid!)
     fn valid(x:usize)->Self;
@@ -17,7 +17,7 @@ pub trait Indexer:Eq+Clone+Copy+core::fmt::Debug{
     fn invalid()->Self;
 
     /// Check if index is valid
-    fn is_valid(&self)->bool;
+    fn is_valid(self)->bool;
 
     // fn used(&self)->bool{
     //
@@ -31,51 +31,53 @@ pub trait Indexer:Eq+Clone+Copy+core::fmt::Debug{
 
 impl Indexer for isize{
     #[inline]
-    fn usize(&self)->usize{
-        return *self as usize
+    fn usize(self)->usize{
+        return (self - 1) as usize
     }
     #[inline]
     fn valid(x:usize)->Self{
-        return x as isize
+        return (x + 1) as isize
     }
 
     /// Generate an invalid reference
     #[inline]
     fn invalid()->Self{
-        return -1
+        return 0
     }
 
     /// Check if index is valid
     #[inline]
-    fn is_valid(&self)->bool
+    fn is_valid(self)->bool
     {
-        return *self >= 0;
+        return self != 0;
     }
 }
 
 impl Indexer for i32{
     #[inline]
-    fn usize(&self)->usize{
-        return *self as usize
+    fn usize(self)->usize{
+        return (self-1) as usize
     }
     #[inline]
     fn valid(x:usize)->Self{
-        return x as i32
+        return (x+1) as i32
     }
 
     /// Generate an invalid reference
     #[inline]
     fn invalid()->Self{
-        return -1
+        return 0
     }
 
     /// Check if index is valid
     #[inline]
-    fn is_valid(&self)->bool
+    fn is_valid(self)->bool
     {
-        return *self >= 0;
+        return self != 0;
     }
 }
+
+
 
 #[derive(Debug)]
 struct Slot<T, DT:Indexer> {
@@ -90,17 +92,24 @@ impl <T:Clone, DT:Indexer> Clone for Slot<T,DT>{
             next_free:self.next_free,
         }
     }
+
+
 }
 
 
 impl <T, DT:Indexer> Slot<T,DT>{
+
+
     /// Overwrite self with new data T
     #[inline]
     fn overwrite(&mut self, data:T) {
         unsafe{ManuallyDrop::drop(&mut self.data)};
         self.data = ManuallyDrop::new(data);
     }
-
+    // #[inline]
+    // fn empty()->Self {
+    //     Slot { data: unsafe { MaybeUninit::uninit().assume_init() }, next_free: None }
+    // }
 
 }
 
@@ -180,9 +189,10 @@ impl<T,DT:Indexer> FreeList<T,DT> {
     }
     #[inline]
     pub fn remove(&mut self, idx: usize) {
-        let entry = self.entries.get_mut(idx).expect("Provided index is not valid!");
+        //let entry = self.entries.get_mut(idx).expect("Provided index is not valid!");
+
         // We do not run Drop for the contained T, as we are just marking slot empty.
-        entry.next_free = self.next_free;
+        self.entries[idx].next_free = self.next_free;
         self.next_free = DT::valid(idx);
         self.num_entries -= 1;
     }
