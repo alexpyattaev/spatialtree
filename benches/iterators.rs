@@ -1,32 +1,26 @@
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
-/*
-#![feature(generic_const_exprs)]
 
-
-use lodtree::coords::OctVec;
-use lodtree::Tree;
 use rand::rngs::SmallRng;
-use rand::{Rng, SeedableRng};
-
-
+use rand::SeedableRng;
+use spatialtree::coords::*;
+use spatialtree::*;
 
 const N_LOOKUPS: usize = 40;
 fn generate_area_bounds(rng: &mut SmallRng) -> (OctVec, OctVec) {
     const D: u8 = 4;
     let cmax = 1 << D;
 
-    let min = OctVec::new(
-        rng.gen_range(0..cmax - 1),
-        rng.gen_range(0..cmax - 1),
-        rng.gen_range(0..cmax - 1),
-        D,
+    let min = rand_cv(
+        rng,
+        OctVec::new([0, 0, 0], D),
+        OctVec::new([cmax - 2, cmax - 2, cmax - 2], D),
     );
-    let max = OctVec::new(
-        rng.gen_range(min.x + 1..cmax),
-        rng.gen_range(min.y + 1..cmax),
-        rng.gen_range(min.z + 1..cmax),
-        D,
+    let max = rand_cv(
+        rng,
+        min + OctVec::new([1, 1, 1], D),
+        OctVec::new([cmax, cmax, cmax], D),
     );
+
     return (min, max);
 }
 
@@ -46,45 +40,39 @@ impl Default for ChuChunk {
     }
 }
 
-fn create_and_fill_octree<C: Default>(num_chunks: u32, depth: u8) -> Tree<C, OctVec> {
+fn create_and_fill_octree<C: Default>(num_chunks: u32, depth: u8) -> OctTree<C, OctVec> {
     let mut rng = SmallRng::seed_from_u64(42);
-    let mut tree: Tree<C, OctVec> = Tree::with_capacity(num_chunks as usize);
+    let mut tree: OctTree<C, OctVec> =
+        OctTree::with_capacity(num_chunks as usize, num_chunks as usize);
 
     let cmax = 1 << depth;
 
     for _c in 0..num_chunks {
-        let qv = OctVec::new(
-            rng.gen_range(0..cmax),
-            rng.gen_range(0..cmax),
-            rng.gen_range(0..cmax),
-            depth,
+        let qv: CoordVec<3> = rand_cv(
+            &mut rng,
+            OctVec::new([0, 0, 0], depth),
+            OctVec::new([cmax, cmax, cmax], depth),
         );
-
-        while tree.prepare_insert(&[qv], 0, &mut |_p| C::default()) {
-            // do the update
-            tree.do_update();
-            // and clean
-            tree.complete_update();
-        }
+        tree.insert(qv, |_p| C::default());
     }
     tree
 }
 
-fn bench_lookups_in_octree(tree: &Tree<ChuChunk, OctVec>) {
+fn bench_lookups_in_octree(tree: &OctTree<ChuChunk, OctVec>) {
     let mut rng = SmallRng::seed_from_u64(42);
     for _ in 0..N_LOOKUPS {
         let (min, max) = generate_area_bounds(&mut rng);
-        for i in tree.iter_all_chunks_in_bounds_and_tree(min, max, 4) {
+        for i in tree.iter_chunks_in_aabb(min, max) {
             black_box(i);
         }
     }
 }
 
-fn bench_mut_lookups_in_octree(tree: &mut Tree<ChuChunk, OctVec>) {
+fn bench_mut_lookups_in_octree(tree: &mut OctTree<ChuChunk, OctVec>) {
     let mut rng = SmallRng::seed_from_u64(42);
     for _ in 0..N_LOOKUPS {
         let (min, max) = generate_area_bounds(&mut rng);
-        for i in tree.iter_all_chunks_in_bounds_and_tree_mut(min, max, 4) {
+        for i in tree.iter_chunks_in_aabb_mut(min, max) {
             i.1.material_index += 1;
             i.1.a_index += 1;
             i.1.b_index += 1;
@@ -92,7 +80,7 @@ fn bench_mut_lookups_in_octree(tree: &mut Tree<ChuChunk, OctVec>) {
     }
 }
 
-pub fn bench_iteration(c: &mut Criterion) {
+pub fn tree_iteration(c: &mut Criterion) {
     let mut group = c.benchmark_group("mutable iteration");
     let mut samples_num = 100;
 
@@ -144,7 +132,7 @@ pub fn bench_iteration(c: &mut Criterion) {
     group.finish();
 }
 
-pub fn bench_creation(c: &mut Criterion) {
+pub fn tree_creation(c: &mut Criterion) {
     let mut group = c.benchmark_group("tree creation");
 
     let mut samples_num = 10;
@@ -172,14 +160,6 @@ pub fn bench_creation(c: &mut Criterion) {
     }
     group.finish();
 }
-*/
 
-pub fn bench_creation(c: &mut Criterion){
-
-}
-pub fn bench_iteration(c: &mut Criterion){
-
-}
-criterion_group!(benches, bench_creation, bench_iteration);
+criterion_group!(benches, tree_creation, tree_iteration);
 criterion_main!(benches);
-

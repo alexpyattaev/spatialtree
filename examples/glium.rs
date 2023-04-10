@@ -5,8 +5,8 @@ use glium::{
     VertexBuffer,
 };
 
-use lodtree::coords::QuadVec;
-use lodtree::*;
+use spatialtree::coords::QuadVec;
+use spatialtree::*;
 
 // the chunk struct for the tree
 #[allow(dead_code)]
@@ -123,7 +123,7 @@ impl RenderContext {
     }
 }
 
-fn draw(mouse_pos: (f32, f32), tree: &mut Tree<Chunk, QuadVec>, ctx: &RenderContext) {
+fn draw(mouse_pos: (f32, f32), tree: &mut QuadTree<Chunk, QuadVec>, ctx: &RenderContext) {
     //function for adding chunks to their respective position, and also set their properties
     fn chunk_creator(_position: QuadVec) -> Chunk {
         Chunk {
@@ -134,34 +134,8 @@ fn draw(mouse_pos: (f32, f32), tree: &mut Tree<Chunk, QuadVec>, ctx: &RenderCont
         }
     }
 
-    let qv = QuadVec::from_float_coords(mouse_pos.0 as f64, (1.0 - mouse_pos.1) as f64, 6);
-    if tree.prepare_update(&[qv], 2, &mut chunk_creator) {
-        // position should already have been set, so we can just change the visibility
-        for chunk in tree.iter_chunks_to_activate_mut() {
-            chunk.visible = true;
-            chunk.cache_state |= 1;
-        }
-
-        for chunk in tree.iter_chunks_to_deactivate_mut() {
-            chunk.visible = false;
-        }
-
-        // and make chunks that are cached visible
-        for chunk in tree.iter_chunks_to_remove_mut() {
-            chunk.cache_state = 2;
-        }
-
-        // do the update
-        tree.do_update();
-
-        // and clean
-        tree.complete_update();
-    }
-
-    // go over all chunks in the tree and set them to not be selected
-    for chunk in tree.iter_chunks_mut() {
-        chunk.selected = false;
-    }
+    let qv = QuadVec::from_float_coords([mouse_pos.0, (1.0 - mouse_pos.1)], 5);
+    tree.lod_update(&[qv], 2, chunk_creator, |_,_|{});
 
     // and select the chunk at the mouse position
     if let Some(chunk) = tree.get_chunk_from_position_mut(qv) {
@@ -175,13 +149,14 @@ fn draw(mouse_pos: (f32, f32), tree: &mut Tree<Chunk, QuadVec>, ctx: &RenderCont
     target.clear_color(0.6, 0.6, 0.6, 1.0);
 
     // go over all chunks, iterator version
-    for (chunk, position) in tree.iter_chunks_and_positions() {
+    for (_, container) in tree.iter_chunks() {
+        let (chunk, position) = (&container.chunk, container.position);
         if chunk.visible {
             // draw it if it's visible
             // here we get the chunk position and size
             let uniforms = uniform! {
-                offset: [position.get_float_coords().0 as f32, position.get_float_coords().1 as f32],
-                scale: position.get_size() as f32,
+                offset: position.float_coords(),
+                scale: position.float_size() as f32,
                 state: chunk.cache_state,
                 selected: chunk.selected as i32,
             };
@@ -199,11 +174,16 @@ fn draw(mouse_pos: (f32, f32), tree: &mut Tree<Chunk, QuadVec>, ctx: &RenderCont
         }
     }
     target.finish().unwrap();
+
+    // deselect the chunk at the mouse position
+    if let Some(chunk) = tree.get_chunk_from_position_mut(qv) {
+        chunk.selected = false;
+    }
 }
 
 fn main() {
     // set up the tree
-    let mut tree = Tree::<Chunk, QuadVec>::new(32);
+    let mut tree = QuadTree::<Chunk, QuadVec>::with_capacity(32, 32);
     // start the glium event loop
     let event_loop = glutin::event_loop::EventLoop::new();
     let context = RenderContext::new(&event_loop);

@@ -1,5 +1,5 @@
-#![allow(incomplete_features)]
-#![feature(generic_const_exprs)]
+//#![allow(incomplete_features)]
+//#![feature(generic_const_exprs)]
 //! # LodTree
 //! LodTree, a simple tree data structure for doing chunk-based level of detail.
 //!
@@ -179,9 +179,5 @@ pub use crate::tree::*;
 pub mod freelist;
 pub use crate::freelist::*;
 
-//pub mod iter;
-//pub use crate::iter::*;
-
-
-
-
+pub mod iter;
+pub use crate::iter::*;

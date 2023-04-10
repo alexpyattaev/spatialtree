@@ -2,387 +2,9 @@
 use crate::coords::*;
 use crate::tree::*;
 
-// implements all iterators for the given functions
-// this allows quickly and easily set them up for all chunks
-macro_rules! impl_all_iterators {
-    (
-		$name:ident,
-		$name_mut:ident,
-		$name_pos:ident,
-		$name_chunk_and_pos:ident,
-		$name_chunk_and_pos_mut:ident,
-		$len:ident,
-		$get:ident,
-		$get_mut:ident,
-		$get_pos:ident,
-		$(#[$doc:meta])*
-		$func_name:ident,
-		$(#[$doc_mut:meta])*
-		$func_name_mut:ident,
-		$(#[$doc_pos:meta])*
-		$func_name_pos:ident,
-		$(#[$doc_chunk_and_pos:meta])*
-		$func_name_chunk_and_pos:ident,
-		$(#[$doc_chunk_and_pos_mut:meta])*
-		$func_name_chunk_and_pos_mut:ident,
-	) => {
-        // define the struct
-        #[doc=concat!("Iterator for chunks, see ", stringify!($func_name), "() under Tree for documentation")]
-		pub struct $name<'a, const N:usize, C: Sized, L: LodVec<N>> where [(); L::NUM_CHILDREN]: {
-            tree: &'a Tree<N, C, L>,
-            index: usize,
-        }
-
-		#[doc=concat!("Iterator for mutable chunks, see ", stringify!($func_name_mut), "() under Tree for documentation")]
-        pub struct $name_mut<'a, const N:usize, C: Sized, L: LodVec<N>> where [(); L::NUM_CHILDREN]:{
-            tree: &'a mut Tree<N, C, L>,
-            index: usize,
-        }
-
-        #[doc=concat!("Iterator for chunk positions, see ", stringify!($func_name_pos), "() under Tree for documentation")]
-        pub struct $name_pos<'a, C: Sized, L: LodVec> where [(); L::NUM_CHILDREN]:{
-            tree: &'a Tree<C, L>,
-            index: usize,
-        }
-
-        #[doc=concat!("Iterator for chunks and positions, see ", stringify!($func_name_chunk_and_pos), "() under Tree for documentation")]
-        pub struct $name_chunk_and_pos<'a, C: Sized, L: LodVec>where [(); L::NUM_CHILDREN]: {
-            tree: &'a Tree<C, L>,
-            index: usize,
-        }
-
-        #[doc=concat!("Iterator for mutable chunks and positions, see ", stringify!($func_name_chunk_and_pos_mut), "() under Tree for documentation")]
-		pub struct $name_chunk_and_pos_mut<'a, C: Sized, L: LodVec> where [(); L::NUM_CHILDREN]:{
-            tree: &'a mut Tree<C, L>,
-            index: usize,
-        }
-
-        // and implement iterator for it
-        impl<'a, C: Sized, L: LodVec> Iterator for $name<'a, C, L> where [(); L::NUM_CHILDREN]:{
-            type Item = &'a C;
-
-			#[inline]
-            fn next(&mut self) -> Option<Self::Item> {
-                // if the item is too big, stop
-                if self.index >= self.tree.$len() {
-                    None
-                } else {
-                    // otherwise, get the item
-                    let item = self.tree.$get(self.index);
-
-                    // increment the index
-                    self.index += 1;
-
-                    Some(item)
-                }
-            }
-        }
-
-        impl<'a, C: Sized, L: LodVec> Iterator for $name_mut<'a, C, L> where [(); L::NUM_CHILDREN]:{
-            type Item = &'a mut C;
-
-			#[inline]
-            fn next(&mut self) -> Option<Self::Item> {
-                // if the item is too big, stop
-                if self.index >= self.tree.$len() {
-                    None
-                } else {
-                    // otherwise, get the item
-                    let item = unsafe { self.tree.$get_mut(self.index).as_mut()? };
-
-                    // increment the index
-                    self.index += 1;
-
-                    Some(item)
-                }
-            }
-        }
-
-        impl<'a, C: Sized, L: LodVec> Iterator for $name_pos<'a, C, L> where [(); L::NUM_CHILDREN]:{
-            type Item = L;
-
-			#[inline]
-            fn next(&mut self) -> Option<Self::Item> {
-                // if the item is too big, stop
-                if self.index >= self.tree.$len() {
-                    None
-                } else {
-                    // otherwise, get the item
-                    let item = self.tree.$get_pos(self.index);
-
-                    // increment the index
-                    self.index += 1;
-
-                    Some(item)
-                }
-            }
-        }
-
-        impl<'a, C: Sized, L: LodVec> Iterator for $name_chunk_and_pos<'a, C, L> where [(); L::NUM_CHILDREN]:{
-            type Item = (&'a C, L);
-
-			#[inline]
-            fn next(&mut self) -> Option<Self::Item> {
-                // if the item is too big, stop
-                if self.index >= self.tree.$len() {
-                    None
-                } else {
-                    // otherwise, get the item
-                    let item = (self.tree.$get(self.index), self.tree.$get_pos(self.index));
-
-                    // increment the index
-                    self.index += 1;
-
-                    Some(item)
-                }
-            }
-        }
-
-        impl<'a, C: Sized, L: LodVec> Iterator for $name_chunk_and_pos_mut<'a, C, L> where [(); L::NUM_CHILDREN]:{
-            type Item = (&'a mut C, L);
-
-			#[inline]
-            fn next(&mut self) -> Option<Self::Item> {
-                // if the item is too big, stop
-                if self.index >= self.tree.$len() {
-                    None
-                } else {
-                    // otherwise, get the item
-                    let item = (
-                        unsafe { self.tree.$get_mut(self.index).as_mut()? },
-                        self.tree.$get_pos(self.index),
-                    );
-
-                    // increment the index
-                    self.index += 1;
-
-                    Some(item)
-                }
-            }
-        }
-
-        // exact size as well
-        impl<'a, C: Sized, L: LodVec> ExactSizeIterator for $name<'a, C, L> where [(); L::NUM_CHILDREN]:{
-			#[inline]
-            fn len(&self) -> usize {
-                self.tree.$len()
-            }
-        }
-
-        impl<'a, C: Sized, L: LodVec> ExactSizeIterator for $name_mut<'a, C, L> where [(); L::NUM_CHILDREN]:{
-			#[inline]
-            fn len(&self) -> usize {
-                self.tree.$len()
-            }
-        }
-
-        impl<'a, C: Sized, L: LodVec> ExactSizeIterator for $name_pos<'a, C, L> where [(); L::NUM_CHILDREN]:{
-			#[inline]
-            fn len(&self) -> usize {
-                self.tree.$len()
-            }
-        }
-
-        impl<'a, C: Sized, L: LodVec> ExactSizeIterator for $name_chunk_and_pos<'a, C, L> where [(); L::NUM_CHILDREN]:{
-			#[inline]
-            fn len(&self) -> usize {
-                self.tree.$len()
-            }
-        }
-
-        impl<'a, C: Sized, L: LodVec> ExactSizeIterator for $name_chunk_and_pos_mut<'a, C, L>where [(); L::NUM_CHILDREN]: {
-			#[inline]
-            fn len(&self) -> usize {
-                self.tree.$len()
-            }
-        }
-
-        // fused, because it will always return none when done
-        impl<'a, C: Sized, L: LodVec> std::iter::FusedIterator for $name<'a, C, L> where [(); L::NUM_CHILDREN]:{}
-        impl<'a, C: Sized, L: LodVec> std::iter::FusedIterator for $name_mut<'a, C, L> where [(); L::NUM_CHILDREN]:{}
-        impl<'a, C: Sized, L: LodVec> std::iter::FusedIterator for $name_pos<'a, C, L> where [(); L::NUM_CHILDREN]:{}
-        impl<'a, C: Sized, L: LodVec> std::iter::FusedIterator for $name_chunk_and_pos<'a, C, L> where [(); L::NUM_CHILDREN]:{}
-        impl<'a, C: Sized, L: LodVec> std::iter::FusedIterator
-            for $name_chunk_and_pos_mut<'a, C, L> where [(); L::NUM_CHILDREN]:
-        {
-        }
-
-        // and implement all of them for the tree
-        impl<'a, C, L> Tree<C, L>
-        where
-            C: Sized,
-            L: LodVec,
-            [(); L::NUM_CHILDREN]:,
-            Self: 'a,
-        {
-			#[inline]
-			$(#[$doc])*
-			pub fn $func_name(&mut self) -> $name<C, L> {
-				$name {
-					tree: self,
-					index: 0,
-				}
-			}
-
-			#[inline]
-			$(#[$doc_mut])*
-			pub fn $func_name_mut(&mut self) -> $name_mut<C, L> {
-				$name_mut {
-					tree: self,
-					index: 0,
-				}
-			}
-
-			#[inline]
-			$(#[$doc_pos])*
-			pub fn $func_name_pos(&mut self) -> $name_pos<C, L> {
-				$name_pos {
-					tree: self,
-					index: 0,
-				}
-			}
-
-			#[inline]
-			$(#[$doc_chunk_and_pos])*
-			pub fn $func_name_chunk_and_pos(&mut self) -> $name_chunk_and_pos<C, L> {
-				$name_chunk_and_pos {
-					tree: self,
-					index: 0,
-				}
-			}
-
-			#[inline]
-			$(#[$doc_chunk_and_pos_mut])*
-			pub fn $func_name_chunk_and_pos_mut(&mut self) -> $name_chunk_and_pos_mut<C, L> {
-				$name_chunk_and_pos_mut {
-					tree: self,
-					index: 0,
-				}
-			}
-        }
-    };
-}
-
-// chunks
-impl_all_iterators!(
-    ChunkIter,
-    ChunkIterMut,
-    PositionIter,
-    ChunkAndPositionIter,
-    ChunkAndPositionIterMut,
-    get_num_chunks,
-    get_chunk,
-    get_chunk_pointer_mut,
-    get_chunk_position,
-    /// returns an iterator over all chunks
-    iter_chunks,
-    /// returns an iterator over all chunks, mutable
-    iter_chunks_mut,
-    /// returns an iterator over all positions of all chunks
-    iter_chunk_positions,
-    /// returns an iterator over all chunks and their positions
-    iter_chunks_and_positions,
-    /// returns an iterator over all chunks as mutable and their positions
-    iter_chunks_and_positions_mut,
-);
-
-// to activate
-impl_all_iterators!(
-    ChunkToActivateIter,
-    ChunkToActivateIterMut,
-    PositionToActivateIter,
-    ChunkAndPositionToActivateIter,
-    ChunkAndPositionIterToActivateMut,
-    get_num_chunks_to_activate,
-    get_chunk_to_activate,
-    get_chunk_to_activate_pointer_mut,
-    get_position_of_chunk_to_activate,
-    /// returns an iterator over all chunks to activate
-    iter_chunks_to_activate,
-    /// returns an iterator over all chunks to activate, mutable
-    iter_chunks_to_activate_mut,
-    /// returns an iterator over all positions of all chunks to activate
-    iter_chunks_to_activate_positions,
-    /// returns an iterator over all chunks to activate and their positions
-    iter_chunks_to_activate_and_positions,
-    /// returns an iterator over all chunks to activate as mutable and their positions
-    iter_chunks_to_activate_and_positions_mut,
-);
-
-// to deactivate
-impl_all_iterators!(
-    ChunkToDeactivateIter,
-    ChunkToDeactivateIterMut,
-    PositionToDeactivateIter,
-    ChunkAndPositionToDeactivateIter,
-    ChunkAndPositionIterToDeactivateMut,
-    get_num_chunks_to_deactivate,
-    get_chunk_to_deactivate,
-    get_chunk_to_deactivate_pointer_mut,
-    get_position_of_chunk_to_deactivate,
-    /// returns an iterator over all chunks to deactivate
-    iter_chunks_to_deactivate,
-    /// returns an iterator over all chunks to deactivate, mutable
-    iter_chunks_to_deactivate_mut,
-    /// returns an iterator over all positions of all chunks to deactivate
-    iter_chunks_to_deactivate_positions,
-    /// returns an iterator over all chunks to deactivate and their positions
-    iter_chunks_to_deactivate_and_positions,
-    /// returns an iterator over all chunks to deactivate as mutable and their positions
-    iter_chunks_to_deactivate_and_positions_mut,
-);
-
-// to add
-impl_all_iterators!(
-    ChunkToAddIter,
-    ChunkToAddIterMut,
-    PositionToAddIter,
-    ChunkAndPositionToAddIter,
-    ChunkAndPositionIterToAddMut,
-    get_num_chunks_to_add,
-    get_chunk_to_add,
-    get_chunk_to_add_pointer_mut,
-    get_position_of_chunk_to_add,
-    /// returns an iterator over all chunks to add
-    iter_chunks_to_add,
-    /// returns an iterator over all chunks to add, mutable
-    iter_chunks_to_add_mut,
-    /// returns an iterator over all positions of all chunks to add
-    iter_chunks_to_add_positions,
-    /// returns an iterator over all chunks to add and their positions
-    iter_chunks_to_add_and_positions,
-    /// returns an iterator over all chunks to add as mutable and their positions
-    iter_chunks_to_add_and_positions_mut,
-);
-
-// to remove
-impl_all_iterators!(
-    ChunkToRemoveIter,
-    ChunkTorRmoveIterMut,
-    PositionToRemoveIter,
-    ChunkAndPositionToRemoveIter,
-    ChunkAndPositionIterToRemoveMut,
-    get_num_chunks_to_remove,
-    get_chunk_to_remove,
-    get_chunk_to_remove_pointer_mut,
-    get_position_of_chunk_to_remove,
-    /// returns an iterator over all chunks to remove
-    iter_chunks_to_remove,
-    /// returns an iterator over all chunks to remove, mutable
-    iter_chunks_to_remove_mut,
-    /// returns an iterator over all positions of all chunks to remove
-    iter_chunks_to_remove_positions,
-    /// returns an iterator over all chunks to remove and their positions
-    iter_chunks_to_remove_and_positions,
-    /// returns an iterator over all chunks to remove as mutable and their positions
-    iter_chunks_to_remove_and_positions_mut,
-);
-
-
-
-// iterator for all chunks that are inside given bounds
-pub struct ChunksInBoundIter<L: LodVec> {
-    // internal stack for which chunks are next
+/// iterator for all coordinates that are inside given bounds
+pub struct CoordsInBoundsIter<const N: usize, L: LodVec<N>> {
+    // internal stack for which coordinates are next
     stack: Vec<L>,
 
     // and maximum depth to go to
@@ -395,20 +17,26 @@ pub struct ChunksInBoundIter<L: LodVec> {
     bound_max: L,
 }
 
-impl<L: LodVec> Iterator for ChunksInBoundIter<L> {
+fn stack_size<const N: usize, L: LodVec<N>>(cv: L) -> usize {
+    (cv.depth() as usize * L::MAX_CHILDREN) - (cv.depth() as usize - 1)
+}
+
+impl<const N: usize, L: LodVec<N>> Iterator for CoordsInBoundsIter<N, L> {
     type Item = L;
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         let current = self.stack.pop()?;
-
-        // go over all child nodes
-        for i in 0..L::NUM_CHILDREN as u32{
-            let position = current.get_child(i);
-
-            // if they are in bounds, and the correct depth, add them to the stack
-            if position.is_inside_bounds(self.bound_min, self.bound_max, self.max_depth) {
-                self.stack.push(position);
+        if current.depth() != self.max_depth {
+            // go over all child nodes
+            for i in 0..L::MAX_CHILDREN {
+                let position = current.get_child(i);
+                // if they are in bounds, add them to the stack
+                if position.is_inside_bounds(self.bound_min, self.bound_max, self.max_depth) {
+                    //We really do not want this to EVER allocate...
+                    debug_assert_ne!(self.stack.capacity(), self.stack.len());
+                    self.stack.push(position);
+                }
             }
         }
         // and return this item from the stack
@@ -416,335 +44,177 @@ impl<L: LodVec> Iterator for ChunksInBoundIter<L> {
     }
 }
 
-pub struct ChunksInBoundAndMaybeTreeIter<'a, C: Sized, L: LodVec> where [(); L::NUM_CHILDREN]:{
-    // the tree
-    tree: &'a Tree<C, L>,
+duplicate::duplicate! {
+[
+    StructName              reference(lt, type)     getter             caster(r);
+    [ChunksInBoundIter]     [& 'lt type]            [chunk_ref]        [ r ];
+    [ChunksInBoundIterMut]  [& 'lt mut type]        [chunk_ref_mut]    [unsafe{r.as_mut().unwrap_unchecked()}];
+]
+///Iterator over positions and data chunks in a given AABB.
+pub struct StructName<'a, const N:usize, const B:usize, C, L>
+where
+L:LodVec<N>,
+C:Sized,
+{
+    /// the tree reference
+    tree: reference([a],[Tree<N, B, C, L>]),
 
-    // internal stack for which chunks are next
-    stack: Vec<(L, Option<TreeNode>)>,
+    /// internal stack for which chunks are next
+    to_visit: Vec<TreePos<N, L>>,
 
-    // and maximum depth to go to
+    /// index of child to return
+    to_return: arrayvec::ArrayVec<usize, B>,
+    /// and maximum depth to go to
     max_depth: u8,
 
-    // and the min of the bound
+    /// the min of the bound box
     bound_min: L,
 
-    // and max of the bound
+    /// max of the bound box
     bound_max: L,
 }
 
-impl<'a, C: Sized, L: LodVec> Iterator for ChunksInBoundAndMaybeTreeIter<'a, C, L>where [(); L::NUM_CHILDREN]: {
-    type Item = (L, Option<&'a C>);
+
+impl  <'a, const N:usize, const B:usize, C, L> Iterator for StructName<'a,N,B, C, L> where
+L:LodVec<N>,
+C:Sized,
+{
+    type Item = (L, reference([a], [C]));
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        let (current_position, current_node) = self.stack.pop()?;
+        // if we have nothing in to_return stack, traverse the tree.
+        while self.to_return.is_empty() {
+            // try to traverse more nodes, if nothing to traverse we are done
+            let current = self.to_visit.pop()?;
+           // dbg!(current);
+            //if we are allowed to dive deeper, do so
+            if current.pos.depth() != self.max_depth {
+                let cur_node = &self.tree.nodes[current.idx];
+                // go over all child nodes
+                for i in 0..L::MAX_CHILDREN {
+                    let child_position = current.pos.get_child(i);
 
-        // go over all child nodes
-        for i in 0..L::NUM_CHILDREN as u32{
-            let position = current_position.get_child(i);
-
-            // if they are in bounds, and the correct depth, add them to the stack
-            if position.is_inside_bounds(self.bound_min, self.bound_max, self.max_depth) {
-                // also, check if the node has children
-                if let Some(node) = current_node {
-                    // and if it has children
-                    if let Some(children) = node.children {
-                        // children, so node
-                        self.stack.push((
-                            position,
-                            Some(self.tree.nodes[(children.get() + i) as usize]),
-                        ));
-                    } else {
-                        // no node, so no chunk
-                        self.stack.push((position, None));
+                    if !child_position.is_inside_bounds(self.bound_min, self.bound_max, self.max_depth){
+                        //dbg!(self.bound_min,self.bound_max);
+                        //println!("Tried child {i} pos {child_position:?} got OOB!");
+                        continue;
                     }
-                } else {
-                    // no node, so no chunk
-                    self.stack.push((position, None));
-                }
-            }
-        }
-        // and return this item from the stack
-        if let Some(node) = current_node {
-            // there is a node, so get the chunk it has
-            let chunk = &self.tree.chunks[node.chunk as usize].chunk;
-
-            // and return it
-            Some((current_position, Some(chunk)))
-        } else {
-            // no chunk, so return that as None
-            Some((current_position, None))
-        }
-    }
-}
-
-pub struct ChunksInBoundAndTreeIter<'a, C: Sized, L: LodVec> where [(); L::NUM_CHILDREN]: {
-    // the tree
-    tree: &'a Tree<C, L>,
-
-    // internal stack for which chunks are next
-    stack: Vec<(L, TreeNode)>,
-
-    // and maximum depth to go to
-    max_depth: u8,
-
-    // and the min of the bound
-    bound_min: L,
-
-    // and max of the bound
-    bound_max: L,
-}
-
-impl<'a, C: Sized, L: LodVec> Iterator for ChunksInBoundAndTreeIter<'a, C, L> where [(); L::NUM_CHILDREN]: {
-    type Item = (L, &'a C);
-
-    #[inline]
-    fn next(&mut self) -> Option<Self::Item> {
-        let (current_position, current_node) = self.stack.pop()?;
-
-        // go over all child nodes
-        for i in 0..L::NUM_CHILDREN as u32{
-            let position = current_position.get_child(i);
-
-            // if the node has children
-            if let Some(children) = current_node.children {
-                // if they are in bounds, and the correct depth, add them to the stack
-                if position.is_inside_bounds(self.bound_min, self.bound_max, self.max_depth) {
-                    // and push to the stack
-                    self.stack
-                        .push((position, self.tree.nodes[(children.get() + i) as usize]));
-                }
-            }
-        }
-
-        // and return the position and node
-        Some((
-            current_position,
-            &self.tree.chunks[current_node.chunk as usize].chunk,
-        ))
-    }
-}
-
-pub struct ChunksInBoundAndMaybeTreeIterMut<'a, C: Sized, L: LodVec>where [(); L::NUM_CHILDREN]: {
-    // the tree
-    tree: &'a mut Tree<C, L>,
-
-    // internal stack for which chunks are next
-    stack: Vec<(L, Option<TreeNode>)>,
-
-    // and maximum depth to go to
-    max_depth: u8,
-
-    // and the min of the bound
-    bound_min: L,
-
-    // and max of the bound
-    bound_max: L,
-}
-
-impl<'a, C: Sized, L: LodVec> Iterator for ChunksInBoundAndMaybeTreeIterMut<'a, C, L> where [(); L::NUM_CHILDREN]:{
-    type Item = (L, Option<&'a mut C>);
-
-    #[inline]
-    fn next(&mut self) -> Option<Self::Item> {
-        let (current_position, current_node) = self.stack.pop()?;
-
-        // go over all child nodes
-        for i in 0..L::NUM_CHILDREN as u32{
-            let position = current_position.get_child(i);
-
-            // if they are in bounds, and the correct depth, add them to the stack
-            if position.is_inside_bounds(self.bound_min, self.bound_max, self.max_depth) {
-                // also, check if the node has children
-                if let Some(node) = current_node {
-                    // and if it has children
-                    if let Some(children) = node.children {
-                        // children, so node
-                        self.stack.push((
-                            position,
-                            Some(self.tree.nodes[(children.get() + i) as usize]),
-                        ));
-                    } else {
-                        // no node, so no chunk
-                        self.stack.push((position, None));
+                    //println!("Use child {i} pos {child_position:?}");
+                    // if child is present at given location add it to the visit list
+                    //dbg!(cur_node.children);
+                    if let Some(child_idx) = cur_node.children[i] {
+                        self.to_visit.push(TreePos{pos:child_position, idx: child_idx.get() as usize});
                     }
-                } else {
-                    // no node, so no chunk
-                    self.stack.push((position, None));
+                    if let Some(chunk_idx) = cur_node.chunk[i].get() {
+                        //println!("Return chunk {}",chunk_idx);
+                        self.to_return.push(chunk_idx);
+                    }
                 }
+                //dbg!(&self.to_visit);
             }
         }
-        // and return this item from the stack
-        if let Some(node) = current_node {
-            // there is a node, so get the chunk it has
-            let chunk = &mut self.tree.chunks[node.chunk as usize].chunk as *mut C;
-
-            // and return it
-            // Safety: The iterator lives at least as long as the tree, and no changes can be made to the tree while it's borrowed by the iterator
-            Some((current_position, Some(unsafe { chunk.as_mut()? })))
-        } else {
-            // no chunk, so return that as None
-            Some((current_position, None))
+        match self.to_return.pop(){
+            Some(ci)=>{
+                let (pos, rr) = self.getter(ci);
+                Some((pos, caster([rr])))
+            },
+            // SAFETY: the only way to get here is by having stuf in the to_return vec
+            _=>unsafe{core::hint::unreachable_unchecked()}
         }
     }
 }
+}
+impl<'a, const N: usize, const B: usize, C, L> ChunksInBoundIter<'a, N, B, C, L>
+where
+    L: LodVec<N>,
+    C: Sized,
+{
+    ///Access reference to a chunk in tree while correctly setting lifetime
+    fn chunk_ref(&self, ci: usize) -> (L, &'a C) {
+        let cr = &self.tree.chunks[ci];
+        (cr.position, &cr.chunk)
+    }
+}
+impl<'a, const N: usize, const B: usize, C, L> ChunksInBoundIterMut<'a, N, B, C, L>
+where
+    L: LodVec<N>,
+    C: Sized,
+{
+    ///Get raw pointer to a chunk in tree
+    fn chunk_ref_mut(&mut self, ci: usize) -> (L, *mut C) {
+        let cr = &mut self.tree.chunks[ci];
+        // SAFETY: we attach the lifetime of the iterator to this when returning so
+        // nobody can destroy the tree when we are not looking.
+        (cr.position, cr.chunk_ptr())
+    }
+}
 
-pub struct ChunksInBoundAndTreeIterMut<'a, C: Sized, L: LodVec> where [(); L::NUM_CHILDREN]:{
-    // the tree
-    tree: &'a mut Tree<C, L>,
-
-    // internal stack for which chunks are next
-    stack: Vec<(L, TreeNode)>,
-
-    // and maximum depth to go to
-    max_depth: u8,
-
-    // and the min of the bound
+/// Iterate over all positions inside a certain AABB.
+/// Important - this returns also intermediate depths!
+#[inline]
+pub fn iter_all_positions_in_bounds<const N: usize, L: LodVec<N>>(
     bound_min: L,
-
-    // and max of the bound
     bound_max: L,
-}
-
-impl<'a, C: Sized, L: LodVec> Iterator for ChunksInBoundAndTreeIterMut<'a, C, L> where [(); L::NUM_CHILDREN]:{
-    type Item = (L, &'a mut C);
-
-    #[inline]
-    fn next(&mut self) -> Option<Self::Item> {
-        let (current_position, current_node) = self.stack.pop()?;
-
-        // go over all child nodes
-        for i in 0..L::NUM_CHILDREN as u32{
-            let position = current_position.get_child(i);
-
-            // if the node has children
-            if let Some(children) = current_node.children {
-                // if they are in bounds, and the correct depth, add them to the stack
-                if position.is_inside_bounds(self.bound_min, self.bound_max, self.max_depth) {
-                    // and push to the stack
-                    self.stack
-                        .push((position, self.tree.nodes[(children.get() + i) as usize]));
-                }
-            }
-        }
-
-        // and return the position and node
-        // Safety: The iterator lives at least as long as the tree, and no changes can be made to the tree while it's borrowed by the iterator
-        Some((current_position, unsafe {
-            (&mut self.tree.chunks[current_node.chunk as usize].chunk as *mut C).as_mut()?
-        }))
+) -> CoordsInBoundsIter<N, L> {
+    debug_assert!(
+        bound_min < bound_max,
+        "Bounds must select a non-empty region"
+    );
+    let mut stack = Vec::with_capacity(stack_size(bound_min));
+    stack.push(L::root());
+    CoordsInBoundsIter {
+        stack,
+        max_depth: bound_min.depth(),
+        bound_min,
+        bound_max,
     }
 }
 
-// TODO: iterator that also goes over chunks in the tree
-// as in: chunks in tree and bounds, immutable and mutable
-// all chunks in the bounds, and ones in the tree, if any
-
-impl<'a, C, L> Tree<C, L>
+impl<'a, const N: usize, const B: usize, C, L> Tree<N, B, C, L>
 where
     C: Sized,
-    L: LodVec,
-    [(); L::NUM_CHILDREN]:,
+    L: LodVec<N>,
     Self: 'a,
 {
-    /// iterate over all chunks that would be affected by an edit inside a certain bound
+    /// Iterate over references to all chunks of the tree in the bounding box. Also returns chunk positions.
     #[inline]
-    pub fn iter_all_chunks_in_bounds(
+    pub fn iter_chunks_in_aabb(
+        &'a self,
         bound_min: L,
         bound_max: L,
-        max_depth: u8,
-    ) -> ChunksInBoundIter<L> {
-        debug_assert!(
-            bound_min < bound_max,
-            "Bounds must select a non-empty area/volume"
-        );
+    ) -> ChunksInBoundIter<N, B, C, L> {
+        debug_assert_eq!(bound_min.depth(), bound_max.depth());
         ChunksInBoundIter {
-            stack: vec![L::root()],
-            max_depth,
-            bound_min,
-            bound_max,
-        }
-    }
-
-    /// iterate over all chunks that would be affected by an edit, including the chunk if it's in the tree
-    #[inline]
-    pub fn iter_all_chunks_in_bounds_and_maybe_tree(
-        &'a self,
-        bound_min: L,
-        bound_max: L,
-        max_depth: u8,
-    ) -> ChunksInBoundAndMaybeTreeIter<C, L> {
-        ChunksInBoundAndMaybeTreeIter {
-            stack: vec![(L::root(), self.nodes.first().copied())],
+            to_visit: vec![TreePos {
+                idx: 0,
+                pos: L::root(),
+            }],
+            to_return: arrayvec::ArrayVec::new(),
             tree: self,
-            max_depth,
+            max_depth: bound_min.depth(),
             bound_min,
             bound_max,
         }
     }
 
-    /// iterate over all chunks that would be affected by an edit, and the chunk that's in the tree.
-    /// Skips any chunks that are not in the tree
+    /// Iterate over mutable references to all chunks of the tree in the bounding box. Also returns chunk positions.
     #[inline]
-    pub fn iter_all_chunks_in_bounds_and_tree(
-        &'a self,
-        bound_min: L,
-        bound_max: L,
-        max_depth: u8,
-    ) -> ChunksInBoundAndTreeIter<C, L> {
-        // get the stack, empty if we can't get the first node
-        let stack = if let Some(node) = self.nodes.first() {
-            vec![(L::root(), *node)]
-        } else {
-            vec![]
-        };
-
-        ChunksInBoundAndTreeIter {
-            stack,
-            tree: self,
-            max_depth,
-            bound_min,
-            bound_max,
-        }
-    }
-
-    /// iterate over all chunks that would be affected by an edit, including the mutable chunk if it's in the tree
-    #[inline]
-    pub fn iter_all_chunks_in_bounds_and_maybe_tree_mut(
+    pub fn iter_chunks_in_aabb_mut(
         &'a mut self,
         bound_min: L,
         bound_max: L,
-        max_depth: u8,
-    ) -> ChunksInBoundAndMaybeTreeIterMut<C, L> {
-        ChunksInBoundAndMaybeTreeIterMut {
-            stack: vec![(L::root(), self.nodes.first().copied())],
-            tree: self,
-            max_depth,
-            bound_min,
-            bound_max,
-        }
-    }
+    ) -> ChunksInBoundIterMut<N, B, C, L> {
+        debug_assert_eq!(bound_min.depth(), bound_max.depth());
 
-    /// iterate over all chunks that would be affected by an edit, and the chunk that's in the tree as mutable.
-    /// Skips any chunks that are not in the tree
-    #[inline]
-    pub fn iter_all_chunks_in_bounds_and_tree_mut(
-        &'a mut self,
-        bound_min: L,
-        bound_max: L,
-        max_depth: u8,
-    ) -> ChunksInBoundAndTreeIterMut<C, L> {
-        // get the stack, empty if we can't get the first node
-        let stack = if let Some(node) = self.nodes.first() {
-            vec![(L::root(), *node)]
-        } else {
-            vec![]
-        };
-        ChunksInBoundAndTreeIterMut {
-            stack,
+        ChunksInBoundIterMut {
+            to_visit: vec![TreePos {
+                idx: 0,
+                pos: L::root(),
+            }],
+            to_return: arrayvec::ArrayVec::new(),
             tree: self,
-            max_depth,
+            max_depth: bound_min.depth(),
             bound_min,
             bound_max,
         }
@@ -754,182 +224,246 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::coords::*;
     use rand::rngs::SmallRng;
     use rand::{Rng, SeedableRng};
-    use std::cmp::Ordering;
 
-    const NUM_QUERIES: usize = 100;
+    const NUM_QUERIES: usize = 1;
 
-    fn get_chunk_count_at_max_depth_quad(a: QuadVec, b: QuadVec) -> u64 {
-        assert_eq!(a.depth, b.depth);
-        ((b.x - a.x) + 1) * ((b.y - a.y) + 1)
+    struct Chunk {
+        visible: bool,
     }
 
-    #[test]
     ///Tests generation of coordinates in bounds over QuadTree
-    fn test_bounds_quadtree() {
-        const D: u8 = 4;
-
-        let mut rng = rand::thread_rng();
-
-        for _i in 1..NUM_QUERIES {
-            let cmax = 1 << D;
-            let min = QuadVec::new(rng.gen_range(0..cmax), rng.gen_range(0..cmax), D);
-            let max = QuadVec::new(rng.gen_range(0..cmax), rng.gen_range(0..cmax), D);
-            //println!("Generated min  {:?}", min);
-            //println!("Generated max {:?}", max);
-            let cmp = min.partial_cmp(&max);
-            if cmp.is_none() {
-                // println!("Can not compare {min:?} and {max:?}");
-                continue;
-            }
-            let (min, max) = match cmp.unwrap() {
-                Ordering::Greater => (max, min),
-                Ordering::Less => (min, max),
-                Ordering::Equal => {
-                    continue;
-                }
-            };
-            struct C;
-            let mut count = 0;
-            for pos in Tree::<C, QuadVec>::iter_all_chunks_in_bounds(min, max, D) {
-                // println!("{:?}", pos);
-
-                if pos.depth == 4 {
-                    count += 1;
-                }
-            }
-            assert_eq!(count, get_chunk_count_at_max_depth_quad(min, max));
-        }
-    }
-
-    fn get_chunk_count_at_max_depth_oct(a: OctVec, b: OctVec) -> u64 {
-        assert_eq!(a.depth, b.depth);
-        ((b.x - a.x) + 1) * ((b.y - a.y) + 1) * ((b.z - a.z) + 1)
-    }
-
-    ///Tests generation of coordinates in bounds over OctTree
     #[test]
-    fn test_bounds_octree() {
-        const D: u8 = 4;
+    fn bounds_quadtree() {
+        let mut rng = SmallRng::seed_from_u64(42);
 
-        let mut rng = rand::thread_rng();
-
-        for _i in 1..100 {
-            let cmax = 1 << D;
-            let min = OctVec::new(
-                rng.gen_range(0..cmax),
-                rng.gen_range(0..cmax),
-                rng.gen_range(0..cmax),
-                D,
+        for _i in 0..NUM_QUERIES {
+            let depth = rng.gen_range(4u8..8u8);
+            let cmax = 1 << depth;
+            let min = rand_cv(
+                &mut rng,
+                QuadVec::new([0, 0], depth),
+                QuadVec::new([cmax - 2, cmax - 2], depth),
             );
-            let max = OctVec::new(
-                rng.gen_range(0..cmax),
-                rng.gen_range(0..cmax),
-                rng.gen_range(0..cmax),
-                D,
+            let max = rand_cv(
+                &mut rng,
+                min + QuadVec::new([1, 1], depth),
+                QuadVec::new([cmax - 1, cmax - 1], depth),
             );
 
             println!("Generated min  {:?}", min);
             println!("Generated max {:?}", max);
-            let cmp = min.partial_cmp(&max);
-            if cmp.is_none() {
-                println!("Can not compare {min:?} and {max:?}");
-                continue;
-            }
-            let (min, max) = match cmp.unwrap() {
-                Ordering::Greater => (max, min),
-                Ordering::Less => (min, max),
-                Ordering::Equal => {
-                    continue;
-                }
-            };
-            struct C;
-            let mut count = 0;
-            for pos in Tree::<C, OctVec>::iter_all_chunks_in_bounds(min, max, D) {
-                // println!("{:?}", pos);
 
-                if pos.depth == 4 {
+            let mut count = 0;
+            for pos in iter_all_positions_in_bounds(min, max) {
+                //println!("{:?}", pos);
+
+                if pos.depth == depth {
                     count += 1;
                 }
             }
-            assert_eq!(count, get_chunk_count_at_max_depth_oct(min, max));
+            assert_eq!(count, get_chunk_count_at_max_depth(min, max));
+        }
+    }
+
+    ///Tests generation of coordinates in bounds over OctTree
+    #[test]
+    fn bounds_octree() {
+        let mut rng = SmallRng::seed_from_u64(42);
+
+        for _i in 0..NUM_QUERIES {
+            let depth = rng.gen_range(4u8..8u8);
+            let cmax = 1 << depth;
+            let min = rand_cv(
+                &mut rng,
+                OctVec::new([0, 0, 0], depth),
+                OctVec::new([cmax - 2, cmax - 2, cmax - 2], depth),
+            );
+            let max = rand_cv(
+                &mut rng,
+                min + OctVec::new([1, 1, 1], depth),
+                OctVec::new([cmax - 1, cmax - 1, cmax - 1], depth),
+            );
+            let mut count = 0;
+            for pos in iter_all_positions_in_bounds(min, max) {
+                //println!("{:?}", pos);
+
+                if pos.depth == depth {
+                    count += 1;
+                }
+            }
+            assert_eq!(count, get_chunk_count_at_max_depth(min, max));
         }
     }
 
     #[test]
-    fn test_readonly_iterator_over_chunks_oct() {
-        struct Chunk {
-            visible: bool,
-        }
+    fn iterate_over_chunks_in_aabb() {
         const D: u8 = 4;
-        const R: u64 = 3;
+        const R: u8 = 3;
 
-        fn chunk_creator(position: OctVec) -> Chunk {
+        let mut counter: usize = 0;
+        let mut counter_created: usize = 0;
+        let mut chunk_creator = |position: OctVec| -> Chunk {
             let r = (R * R) as i32 - 2;
 
             let visible = match position.depth {
-                D => {
-                    (position.x as i32 - r).pow(2)
-                        + (position.y as i32 - r).pow(2)
-                        + (position.z as i32 - r).pow(2)
-                        < r
-                }
+                D => position
+                    .pos
+                    .iter()
+                    .fold(true, |acc, e| acc & ((*e as i32 - R as i32).pow(2) < r)),
                 _ => false,
             };
+            counter += visible as usize;
+            counter_created += 1;
             //println!("create {:?} {:?}", position, visible);
             Chunk { visible }
+        };
+        let cmax = 2u8 * R;
+        let mut tree = OctTree::<Chunk, OctVec>::new();
+        let pos_iter = iter_all_positions_in_bounds(
+            OctVec::new([0u8, 0, 0], D),
+            OctVec::new([cmax, cmax, cmax], D),
+        )
+        .filter(|p| p.depth == D);
+
+        tree.insert_many(pos_iter, &mut chunk_creator);
+
+        // query the whole region for filled voxels
+        let mut filled_voxels: usize = 0;
+        let mut total_voxels: usize = 0;
+        let min = OctVec::new([0, 0, 0], D);
+        let max = OctVec::new([cmax, cmax, cmax], D);
+        for (l, c) in tree.iter_chunks_in_aabb(min, max) {
+            filled_voxels += c.visible as usize;
+            total_voxels += 1;
+            //println!("visit {:?} {:?}", l, c.visible);
+            assert_eq!(
+                l.depth, D,
+                "All chunks must be at max depth (as we did not insert any others)"
+            );
         }
+        assert_eq!(
+            filled_voxels, counter,
+            " we should have found all voxels that were inserted and marked visible"
+        );
+        assert_eq!(
+            total_voxels, counter_created,
+            "we should have found all voxels that were inserted"
+        );
+        assert_eq!(
+            total_voxels,
+            get_chunk_count_at_max_depth(min, max),
+            "we should have found all voxels in AABB"
+        );
 
-        let mut tree = Tree::new();
-        let qv = OctVec::new(R, R, R, D);
-        while tree.prepare_update(&[qv], R as u32, &mut chunk_creator) {
-            // do the update
-            tree.do_update();
-            // and clean
-            tree.complete_update();
-        }
-
-        //for i in &tree.chunks {}
-
+        // query a bunch of random regions
         let mut rng = SmallRng::seed_from_u64(42);
+        for _ite in 0..NUM_QUERIES {
+            let cmax = 2u8 * R;
+            let min = rand_cv(
+                &mut rng,
+                OctVec::new([0, 0, 0], D),
+                OctVec::new([cmax - 2, cmax - 2, cmax - 2], D),
+            );
+            let max = rand_cv(
+                &mut rng,
+                min + OctVec::new([1, 1, 1], D),
+                OctVec::new([cmax, cmax, cmax], D),
+            );
+            // println!("Generated min  {:?}", min);
+            // println!("Generated max {:?}", max);
+            assert!(max > min);
 
-        for _ite in 1..NUM_QUERIES {
-            let cmax = 1 << D;
-            let min = OctVec::new(
-                rng.gen_range(0..cmax),
-                rng.gen_range(0..cmax),
-                rng.gen_range(0..cmax),
-                D,
-            );
-            let max = OctVec::new(
-                rng.gen_range(0..cmax),
-                rng.gen_range(0..cmax),
-                rng.gen_range(0..cmax),
-                D,
-            );
-            let cmp = min.partial_cmp(&max);
-            if cmp.is_none() {
-                //println!("Can not compare {min:?} and {max:?}");
-                continue;
-            }
-            let (min, max) = match cmp.unwrap() {
-                Ordering::Greater => (max, min),
-                Ordering::Less => (min, max),
-                Ordering::Equal => {
-                    continue;
-                }
-            };
-            let mut filled_voxels: u32 = 0;
-            //println!("{:?}  {:?} {:?}", ite, min, max);
-            for (l, c) in tree.iter_all_chunks_in_bounds_and_tree(min, max, D) {
+            let mut filled_voxels: usize = 0;
+            //println!("{:?}  {:?} {:?}", _ite, min, max);
+            for (_l, c) in tree.iter_chunks_in_aabb(min, max) {
                 if c.visible {
-                    println!(" Sphere chunk {:?}", l);
+                    //println!(" Sphere chunk {:?}", _l);
                     filled_voxels += 1;
                 }
             }
-            println!("  filled {:?}", filled_voxels);
+            //println!("  filled {:?}", filled_voxels);
+            assert!(
+                filled_voxels <= counter,
+                "No way we see more voxels than were inserted!"
+            )
+        }
+    }
+
+    #[test]
+    fn edit_chunks_in_aabb() {
+        const D: u8 = 4;
+        const R: u8 = 3;
+        let mut counter: usize = 0;
+        let mut chunk_creator = |position: OctVec| -> Chunk {
+            let r = (R * R) as i32 - 2;
+
+            let visible = match position.depth {
+                D => position
+                    .pos
+                    .iter()
+                    .fold(true, |acc, e| acc & ((*e as i32 - R as i32).pow(2) < r)),
+                _ => false,
+            };
+            counter += visible as usize;
+            println!("create {:?} {:?}", position, visible);
+            Chunk { visible }
+        };
+
+        let mut tree = OctTree::<Chunk, OctVec>::new();
+        let pos_iter = iter_all_positions_in_bounds(
+            OctVec::new([0u8, 0, 0], D),
+            OctVec::new([2u8 * R, 2 * R, 2 * R], D),
+        )
+        .filter(|p| p.depth == D);
+
+        tree.insert_many(pos_iter, &mut chunk_creator);
+
+        // query the whole region for filled voxels
+        let cmax = 2u8 * R;
+        let min = OctVec::new([0, 0, 0], D);
+        let max = OctVec::new([cmax, cmax, cmax], D);
+        let mut filled_voxels: usize = 0;
+        for (l, c) in tree.iter_chunks_in_aabb_mut(min, max) {
+            if c.visible {
+                filled_voxels += 1;
+                c.visible = false;
+            }
+
+            assert_eq!(
+                l.depth, D,
+                "All chunks must be at max depth (as we did not insert any others)"
+            );
+        }
+
+        assert_eq!(
+            filled_voxels, counter,
+            " we should have found all voxels that were inserted and marked visible"
+        );
+
+        let mut rng = SmallRng::seed_from_u64(42);
+
+        for _ite in 0..NUM_QUERIES {
+            let cmax = 2u8 * R;
+            let min = rand_cv(
+                &mut rng,
+                OctVec::new([0, 0, 0], D),
+                OctVec::new([cmax - 2, cmax - 2, cmax - 2], D),
+            );
+            let max = rand_cv(
+                &mut rng,
+                min + OctVec::new([1, 1, 1], D),
+                OctVec::new([cmax, cmax, cmax], D),
+            );
+
+            for (l, c) in tree.iter_chunks_in_aabb_mut(min, max) {
+                assert_eq!(c.visible, false, "no way any voxel is still visible");
+                assert_eq!(
+                    l.depth, D,
+                    "All chunks must be at max depth (as we did not insert any others)"
+                );
+            }
         }
     }
 }

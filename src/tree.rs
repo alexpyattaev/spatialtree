@@ -1,174 +1,268 @@
 //! Contains the tree struct, which is used to hold all chunks
 
 use crate::coords::*;
-
+use slab::Slab;
 use std::fmt::Debug;
 use std::num::NonZeroU32;
+use std::ops::ControlFlow;
 
+/// Type for relative pointers to nodes in the tree. Kept 32bit for cache locality during lookups.
+/// Should you need > 4 billion nodes in the tree do let me know who sells you the RAM.
+pub type NodePtr = Option<NonZeroU32>;
 
+/// Type for relative pointers to chunks in the tree. Kept 32bit for cache locality during lookups.
+/// Encodes "None" variant as -1, and Some(idx) as positive numbers
+/// This is not as fast as NonZeroU32, but close enough for our needs
+/// Should you need > 2 billion chunks in the tree do let me know who sells you the RAM.
+#[derive(PartialEq, Eq, Clone, Copy, Debug)]
+pub struct ChunkPtr(i32);
+impl core::fmt::Display for ChunkPtr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_fmt(format_args!("ChunkPtr({:?})", self.get()))
+    }
+}
 
-/// Type for relative pointers in the tree. Kept 32bit for cache locality during lookups.
-/// Should you need > 4 billion nodes in the tree do let me know.
-pub type RelPtr=Option<NonZeroU32>;
+impl ChunkPtr {
+    #[inline]
+    pub(crate) fn get(self) -> Option<usize> {
+        match self.0 {
+            -1 => None,
+            _ => Some(self.0 as usize),
+        }
+    }
 
-//TODO - use struct of arrays derive
+    #[inline]
+    pub(crate) fn take(&mut self) -> Option<usize> {
+        let rv = match self.0 {
+            -1 => None,
+            _ => Some(self.0 as usize),
+        };
+        *self = Self::None;
+        rv
+    }
+
+    #[inline]
+    pub(crate) fn from(x: Option<usize>) -> Self {
+        match x {
+            Some(v) => Self { 0: v as i32 },
+            None => Self::None,
+        }
+    }
+    // Cheat for "compatibility" with option.
+    #[allow(non_upper_case_globals)]
+    const None: Self = ChunkPtr { 0: -1 };
+}
+
+//TODO: impl Try once stable
+/*impl std::ops::Try for ChunkPtr{
+    type Output = usize;
+
+    type Residual;
+
+    fn from_output(output: Self::Output) -> Self {
+        todo!()
+    }
+
+    fn branch(self) -> ControlFlow<Self::Residual, Self::Output> {
+        todo!()
+    }
+}*/
+
+//TODO - use struct of arrays?
 /// Tree node that encompasses multiple children at once. This just barely fits into one cache line for octree.
 /// For each possible child, the node has two relative pointers:
 ///  - children[i] will point to the TreeNode in a given branch direction
 ///  - chunk[i] will point to the data chunk.
 /// both pointers may be "None", indicating either no children, or no data
 #[derive(Clone, Debug)]
-pub(crate) struct TreeNode<const N:usize,  L: LodVec<N>>
-where [(); L::MAX_CHILDREN]:
-{
+pub struct TreeNode<const N: usize> {
     /// children, these can't be the root (index 0), so we can use Some and Nonzero for slightly more compact memory
-    pub(crate) children: [RelPtr; L::MAX_CHILDREN],
-    // One day this will work on stable:
-
+    pub children: [NodePtr; N],
 
     /// where the chunks for particular children is stored (if any)
-    pub(crate) chunk: [RelPtr; L::MAX_CHILDREN],
+    pub chunk: [ChunkPtr; N],
 }
 
-impl <const N:usize,  L: LodVec<N>>TreeNode<N,  L>
-where [(); L::MAX_CHILDREN]:
-{
-    fn new()->Self{
-        Self{
-            children: [RelPtr::None;L::MAX_CHILDREN],
-            chunk:[RelPtr::None;L::MAX_CHILDREN],
+impl<const N: usize> TreeNode<N> {
+    fn new() -> Self {
+        Self {
+            children: [NodePtr::None; N],
+            chunk: [ChunkPtr::None; N],
         }
+    }
+
+
+    pub fn iter_existing_chunks<'a>(&'a self)-> impl  core::iter::Iterator<Item=(usize,usize)> +'a
+    {
+        self.chunk.iter().filter_map(|c|c.get()).enumerate()
     }
 }
 
+pub fn iter_treenode_children<'a, const N:usize >(children: &'a [NodePtr; N])-> impl  core::iter::Iterator<Item=(usize,usize)>+'a
+{
+    children.iter().filter_map(|c| Some((*c)?.get() as usize)).enumerate()
+}
 
 // utility struct for holding actual chunks and the node that owns them
 #[derive(Clone, Debug)]
-pub(crate) struct ChunkContainer<const N:usize, C: Sized, L: LodVec<N>> {
-    pub(crate) chunk: C,    // actual data inside the chunk
-    pub(crate) node_idx: u32,  // index of the node that holds this chunk
-    pub(crate) position: L, // where the chunk is (as this can not be recovered from node tree)
+pub struct ChunkContainer<const N: usize, C: Sized, L: LodVec<N>> {
+    pub chunk: C,             // actual data inside the chunk
+    pub position: L, // where the chunk is (as this can not be easily recovered from node tree)
+    pub node_idx: u32, // index of the node that holds this chunk
+    pub child_idx: u8, // index of the child in the node
 }
 
-/// holds a descriptor of chunk to be added
-/// modifying the position will break things badly.
-#[derive(Clone, Debug)]
-pub struct ToAddContainer<const N:usize, L: LodVec<N>> {
-    /// Position of the chunk to add
-    pub position: L,
-    chunk_index: u32,  // chunk array index
-    /// Index of the parent node
-    parent_node_index: u32,
+impl<const N: usize, C: Sized, L: LodVec<N>> ChunkContainer<N, C, L> {
+    /// get an mutable pointer to chunk which is not tied to the lifetime of the container
+    /// this is only needed for iterators.
+    #[inline]
+    pub(crate) fn chunk_ptr(&mut self) -> *mut C {
+        &mut self.chunk as *mut C
+    }
 }
 
-// utility struct for holding chunks to remove
-#[derive(Clone, Debug)]
-struct ToRemoveContainer {
-    chunk: u32,  // chunk index
-    parent: u32, // parent index
+/// utility struct for holding locations in the tree.
+#[derive(Clone, Debug, Copy)]
+pub struct TreePos<const N: usize, L: LodVec<N>> {
+    pub idx: usize, // node index
+    pub pos: L,     // and it's position
 }
 
-
-
-// utility struct for holding chunks in the queue
+/// Tree holding the actual data permanently in memory.
+/// This is "too generic", and one should use provided OctTree and QuadTree types when possible.
+///
+/// Internals are partially based on:
+///  * https://stackoverflow.com/questions/41946007/efficient-and-well-explained-implementation-of-a-quadtree-for-2d-collision-det
+///  * https://github.com/Dimev/lodtree
+///
+/// Template parameters are:
+/// * N is the number bits needed to encode B, i.e. 3 for octrees and 4 for quadtrees.
+/// * B is the branch count per node, i.e. 8 for octrees and 4 for quadtrees. Has to be power of two.
+/// An invariant between the two has to be ensured where 1<<N == B, else tree will fail to construct.
+/// This will look nicer once const generics fully stabilize.
 #[derive(Clone, Debug)]
-struct QueueContainer<const N:usize,L: LodVec<N>> {
-    node: u32,   // chunk index
-    position: L, // and it's position
-}
-
-use slab::Slab;
-
-// Tree holding the actual data permanently in memory.
-// partially based on: https://stackoverflow.com/questions/41946007/efficient-and-well-explained-implementation-of-a-quadtree-for-2d-collision-det
-#[derive(Clone, Debug)]
-pub struct Tree<const N:usize, C: Sized, L: LodVec<N>>
-where [(); L::MAX_CHILDREN]:
-{
-    /// All chunks in the tree
+pub struct Tree<const N: usize, const B: usize, C: Sized, L: LodVec<N>> {
+    /// All data chunks in the tree
     pub(crate) chunks: Slab<ChunkContainer<N, C, L>>,
-    /// nodes in the Tree
-    pub(crate) nodes: Slab<TreeNode<N,L>>,
+    /// All nodes of the Tree
+    pub(crate) nodes: Slab<TreeNode<B>>,
 
-    /// indices of the chunks that need to be activated (i.e. the chunks that have just lost children)
-    //chunks_to_activate: Vec<u32>,
-
-    /// indices of the chunks that need to be deactivated (i.e. chunks that have been subdivided in this iteration)
-    //chunks_to_deactivate: Vec<u32>,
-
-    /// internal queue for processing, that way we won't need to reallocate it
-    processing_queue: Vec<QueueContainer<N, L>>,
+    /// Internal queue for batch processing, it will be as long as maximal depth of the tree.
+    /// Single inserts and erases do not operate with this.
+    processing_queue: Vec<TreePos<N, L>>,
 }
 
-
-
-struct IdxPos<const N:usize, L:LodVec<N>> {
-    idx:usize,
-    pos: L,
-}
-
-impl<const N:usize, C, L> Tree<N, C, L>
+impl<const N: usize, const B: usize, C, L> Tree<N, B, C, L>
 where
     C: Sized,
     L: LodVec<N>,
-    [(); L::MAX_CHILDREN]:
 {
-    /// Create a new, "empty" tree which only has the root node.
-    pub fn new() -> Self {
-        Self::with_capacity(1, 1)
-    }
-
+    //TODO: use duplicate! on this
     /// create a tree with preallocated memory for chunks and nodes
-    pub fn with_capacity(nodes_capacity: usize, chunks_capacity:usize) -> Self {
-        debug_assert!(nodes_capacity > 1);
-        debug_assert!(chunks_capacity > 1);
+    /// NOTE this function does runtime asserts to make sure Tree is templated correctly.
+    /// this runtime check will become compiletime check once generic_const_exprs matures.
+    pub fn with_capacity_unsafe(nodes_capacity: usize, chunks_capacity: usize) -> Self {
+        // TODO: once feature(generic_const_exprs) is mature, make this look nicer
+        assert_eq!(1<<N, B, "Relation between N and B is not met, once feature(generic_const_exprs) is mature this will be statically checked");
+
+        debug_assert!(nodes_capacity >= 1);
+        debug_assert!(chunks_capacity >= 1);
         let mut nodes = Slab::with_capacity(nodes_capacity);
         // create root node right away, no point having a tree without a root.
         let r = nodes.insert(TreeNode::new());
         //Slab always returns 0 for index of first inserted element, right? Better check...
         debug_assert_eq!(r, 0);
 
-        let mut chunks= Slab::with_capacity(chunks_capacity);
-
         Self {
-            /*chunks_to_add: Vec::new(),
-             *            chunks_to_remove: Vec::new(),
-             *            chunks_to_activate: Vec::new(),
-             *            chunks_to_deactivate: Vec::new(),*/
-            chunks,
+            chunks: Slab::with_capacity(chunks_capacity),
             nodes,
             processing_queue: Vec::with_capacity(4),
         }
     }
 
-
-    /// Gets the node controlling the desired position.
-    /// If exact match is found, returns Ok variant, else Err variant with nearest match.
-    fn follow_nodes_to_position(&self, position: L) -> Result<&mut TreeNode<N, L>,&mut TreeNode<N, L>> {
+    /// Gets the node "controlling" the desired position. This means node that is one depth level above target.
+    /// Returns the index of child entry and mutable reference to the node.
+    /// If exact match is found, returns Ok variant, else Err variant with nearest match (at lower depth).
+    fn follow_nodes_to_position_mut<'a>(
+        &'a mut self,
+        position: L,
+    ) -> Result<(usize, &'a mut TreeNode<B>), (usize, &'a mut TreeNode<B>)> {
         // start in root
-        let mut addr = IdxPos{idx:0, pos:L::root()};
+        let mut addr = TreePos {
+            idx: 0,
+            pos: L::root(),
+        };
+        // make sure target is not root (else we will be stuck here)
+        debug_assert_ne!(position, addr.pos);
 
         // then loop
         loop {
-            // SAFETY: the node hierarchy should be sound
-            //let mut current = unsafe{self.nodes.get_unchecked_mut(current_idx)};
-            let mut current = self.nodes.get_mut(addr.idx).unwrap();
+            // SAFETY: the node hierarchy should be sound. If it is not we are doomed.
+            let current = unsafe {
+                (self.nodes.get_unchecked_mut(addr.idx) as *mut TreeNode<B>)
+                    .as_mut()
+                    .unwrap()
+            };
             // compute child index & position towards target
             let child_idx = addr.pos.get_child_index(position);
             let child_pos = addr.pos.get_child(child_idx);
             // if the current node is the one we are looking for, return it
             if child_pos == position {
-                return Ok(current);
+                return Ok((child_idx, current));
             }
 
             // assuming the child index points to an existing child node, follow it.
-            addr = match current.children[child_idx]{
-                Some(idx)=>IdxPos{idx:idx.get() as usize, pos: addr.pos.get_child(child_idx)},
-                None=> {return Err(current);}
+            addr = match current.children[child_idx] {
+                Some(idx) => TreePos {
+                    idx: idx.get() as usize,
+                    pos: addr.pos.get_child(child_idx),
+                },
+                None => {
+                    return Err((child_idx, current));
+                }
             };
         }
     }
 
+    /// Gets the node "controlling" the desired position. This means node that is one depth level above target.
+    /// Returns the index of child entry and mutable reference to the node.
+    /// If exact match is found, returns Ok variant, else Err variant with nearest match (at lower depth).
+    fn follow_nodes_to_position<'a>(
+        &'a self,
+        position: L,
+    ) -> Result<(usize, &'a TreeNode<B>), (usize, &'a TreeNode<B>)> {
+        // start in root
+        let mut addr = TreePos {
+            idx: 0,
+            pos: L::root(),
+        };
+        // make sure target is not root (else we will be stuck here)
+        debug_assert_ne!(position, addr.pos);
+
+        // then loop
+        loop {
+            // SAFETY: the node hierarchy should be sound. If it is not we are doomed.
+            let current = unsafe { self.nodes.get_unchecked(addr.idx) };
+            // compute child index & position towards target
+            let child_idx = addr.pos.get_child_index(position);
+            let child_pos = addr.pos.get_child(child_idx);
+            // if the current node is the one we are looking for, return it
+            if child_pos == position {
+                return Ok((child_idx, current));
+            }
+
+            // assuming the child index points to an existing child node, follow it.
+            addr = match current.children[child_idx] {
+                Some(idx) => TreePos {
+                    idx: idx.get() as usize,
+                    pos: addr.pos.get_child(child_idx),
+                },
+                None => {
+                    return Err((child_idx, current));
+                }
+            };
+        }
+    }
 
     /// get the number of chunks in the tree
     #[inline]
@@ -176,7 +270,7 @@ where
         self.chunks.len()
     }
 
-    /// get a chunk
+    /// get a chunk by index
     #[inline]
     pub fn get_chunk(&self, index: usize) -> &C {
         &self.chunks[index].chunk
@@ -188,322 +282,359 @@ where
         &mut self.chunks[index].chunk
     }
 
-
-    /// get a chunk by position, or none if it's not in the tree
+    /// get a chunk by position if it's in the tree
     #[inline]
     pub fn get_chunk_by_position(&self, position: L) -> Option<&C> {
         // get the index of the chunk
-        let node = self.follow_nodes_to_position(position).ok()?;
-        //node.children
-        let chunk_index=todo!();
+        let (idx, node) = self.follow_nodes_to_position(position).ok()?;
+        let chunk_index = node.chunk[idx].get()?;
         // and return the chunk
         Some(&self.chunks[chunk_index].chunk)
     }
 
-    /// get a mutable chunk by position, or none if it's not in the tree
+    /// get a mutable chunk by position if it's in the tree
     #[inline]
     pub fn get_chunk_from_position_mut(&mut self, position: L) -> Option<&mut C> {
         // get the index of the chunk
-        let node = self.follow_nodes_to_position(position).ok()?;
-        let chunk_index=todo!();
+        let (idx, node) = self.follow_nodes_to_position(position).ok()?;
+        let chunk_index = node.chunk[idx].get()?;
         // and return the chunk
         Some(&mut self.chunks[chunk_index].chunk)
     }
 
-
-    /// gets a mutable pointer to a chunk
-    /// This casts get_chunk_mut to a pointer underneath the hood
+    /// get the position of a chunk, if it exists
     #[inline]
-    pub fn get_chunk_pointer_mut(&mut self, index: usize) -> *mut C {
-        self.get_chunk_mut(index)
+    pub fn get_chunk_position(&self, index: usize) -> Option<L> {
+        Some(self.chunks.get(index)?.position)
     }
 
-    /// get the position of a chunk
-    #[inline]
-    pub fn get_chunk_position(&self, index: usize) -> L {
-        self.chunks[index].position
-    }
-
-
-
-    /// Adds chunks at and around specified locations.
-    /// This operation will also add chunks at other locations around the target to fullfill the
-    /// datastructure constraints (such that no partially filled nodes exist).
-    pub fn prepare_insert(
-        &mut self,
-        targets: &[L],
-        detail: u32,
-        chunk_creator: &mut dyn FnMut(L) -> C,
-    ) -> bool {
-        //FIXME: this function currently will dry-run once for every update to make sure
-        // there is nothing left to update. This is a waste of CPU time, especially for many targets
-
-        // first, clear the previous arrays
-        // self.chunks_to_add.clear();
-        // self.chunks_to_remove.clear();
-        // self.chunks_to_activate.clear();
-        // self.chunks_to_deactivate.clear();
-
-        // if we don't have a root, make one pending for creation
-        if self.nodes.is_empty() {
-            // chunk to add
-            let chunk_to_add = chunk_creator(L::root());
-
-            // we need to add the root as pending
-            // self.chunks_to_add.push(ToAddContainer {
-            //     position: L::root(),
-            //     chunk: chunk_to_add,
-            //     parent_node_index:0,
-            // });
-
-            // and an update is needed
-            return true;
-        }
-
+    /// Inserts/replaces chunks at specified locations.
+    /// This operation will create necessary intermediate nodes to meet datastructure
+    /// constraints.
+    /// This operation may allocate memory.
+    ///
+    /// If targets are nearby, we could save quite a bit of resources by
+    /// reducing walking needed to insert data.
+    /// Insert many does not
+    pub fn insert_many<T, V>(&mut self, mut targets: T, mut chunk_creator: V)
+    where
+        T: Iterator<Item = L>,
+        V: FnMut(L) -> C,
+    {
+        debug_assert!(self.nodes.len() > 0);
         // clear the processing queue from any previous updates
         self.processing_queue.clear();
 
-        // add the root node (always at 0, if there is no root we would have returned earlier) to the processing queue
-        self.processing_queue.push(QueueContainer {
-            position: L::root(),
-            node: 0,
-        });
+        // start at the root node
+        let mut addr = TreePos {
+            pos: L::root(),
+            idx: 0,
+        };
 
-        // then, traverse the tree, as long as something is inside the queue
-        while let Some(QueueContainer {
-            position: current_position,
-            node: current_node_index,
-        }) = self.processing_queue.pop()
-        {
-            // fetch the current node
-            let current_node = self.nodes[current_node_index as usize];
-            //dbg!(current_node_index, current_node);
-            // if we can subdivide, and the current node does not have children, subdivide the current node
-            if current_node.children.is_none() {
-                //println!("adding children");
-                // add children to be added
-                for i in 0..L::MAX_CHILDREN as u32 {
-                    // chunk to add
-                    let chunk_to_add = chunk_creator(current_position.get_child(i));
+        let mut tgt = targets.next().expect("Expected at least one target");
+        loop {
+            //println!("===Inserting target {tgt:?}===");
 
-                    // add the new chunk to be added
-                    // self.chunks_to_add.push(ToAddContainer {
-                    //     position: current_position.get_child(i),
-                    //     chunk: chunk_to_add,
-                    //     parent_node_index:current_node_index,
-                    // });
-
-                }
-
-                // and add ourselves for deactivation
-                self.chunks_to_deactivate.push(current_node_index);
-            } else if let Some(index) = current_node.children {
-                //println!("has children at {index:?}");
-                // queue child nodes for processing
-                for i in 0..L::NUM_CHILDREN as u32 {
-                    // wether we can subdivide
-                    let child_pos = current_position.get_child(i);
-                    //dbg!(child_pos);
-                    for t in targets {
-                        if *t == child_pos {
-                            //println!("Found match for target {t:?}");
-                            self.chunks[(index.get() + i) as usize].chunk =
-                                chunk_creator(child_pos);
-                            continue;
-                        }
-                        if t.can_subdivide(child_pos, detail) {
-                            self.processing_queue.push(QueueContainer {
-                                position: child_pos,
-                                node: index.get() + i,
-                            });
-                            break;
-                        }
+            loop {
+                addr = match self.insert_inner(addr, tgt, &mut chunk_creator) {
+                    ControlFlow::Break(_) => {
+                        break;
                     }
-                }
-            }
-        }
-
-        // and return whether an update needs to be done
-        !self.chunks_to_add.is_empty()
-    }
-
-
-    /// Runs the update that's stored in the internal lists.
-    /// This adds and removes chunks based on that, however this assumes that chunks in the to_activate and to_deactivate list were manually activated or deactivated.
-    /// This also assumes that the chunks in to_add had proper initialization, as they are added to the tree.
-    /// After this, it's needed to clean un nodes in the chunk_to_delete list and call the function complete_update(), in order to properly clear the cache
-    /*pub fn do_update(&mut self) {
-        // no need to do anything with chunks that needed to be (de)activated, as we assume that has been handled beforehand
-
-        // first, get the iterator for chunks that will be added
-        // this becomes useful later
-        let mut chunks_to_add_iter = self.chunks_to_add.drain(..);
-
-        // then, remove old chunks, or cache them
-        // we'll drain the vector, as we don't need it anymore afterward
-        for ToRemoveContainer {
-            chunk: index,
-            parent: parent_index,
-        } in self.chunks_to_remove.drain(..)
-        // but we do need to cache these
-        {
-            // remove the node from the tree
-            self.nodes[parent_index as usize].children = None;
-            self.free_list.push(index);
-
-            // and remove the chunk
-            let chunk_index = self.nodes[index as usize].chunk;
-
-            // but not so fast, because if we can overwrite it with a new chunk, do so
-            // that way we can avoid a copy later on, which might be expensive
-            if let Some(ToAddContainer { position, chunk, parent_node_index:parent_index}) =
-                chunks_to_add_iter.next()
-            {
-                // add the node
-                let new_node_index = match self.free_list.pop() {
-                    Some(x) => {
-                        // reuse a free node
-                        self.nodes[x as usize] = TreeNode {
-                            children: None,
-                            chunk: chunk_index,
-                        };
-
-                        // old chunk that was previously in the array
-                        // we initialize it to the new chunk, then swap them
-                        let mut old_chunk = ChunkContainer {
-                            index: x,
-                            chunk,
-                            position,
-                        };
-
-                        std::mem::swap(&mut old_chunk, &mut self.chunks[chunk_index as usize]);
-
-                        // old chunk shouldn't be mutable anymore
-                        let old_chunk = old_chunk;
-
-
-                        x
+                    ControlFlow::Continue(a) => {
+                        self.processing_queue.push(addr);
+                        a
                     }
-                    // This can't be reached due to us *always* adding a chunk to the free list before popping it
-                    None => unsafe { std::hint::unreachable_unchecked() },
                 };
-
-                // correctly set the children of the parent node.
-                // because the last node we come by in with ordered iteration is on num_children - 1, we need to set it as such].
-                // node 0 is the root, so the last child it has will be on num_children.
-                // then subtracting num_children - 1 from that gives us node 1, which is the first child of the root.
-                if new_node_index >= L::NUM_CHILDREN as u32 {
-                    // because we loop in order, and our nodes are contiguous, the first node of the children got added on index i - (num children - 1)
-                    // so we need to adjust for that
-                    self.nodes[parent_index as usize].children =
-                        NonZeroU32::new(new_node_index - (L::NUM_CHILDREN - 1) as u32);
-                }
-            } else {
-                // otherwise we do need to do a regular swap remove
-                let old_chunk = self.chunks.swap_remove(chunk_index as usize);
-
             }
-
-            // and properly set the chunk pointer of the node of the chunk we just moved, if any
-            // if we removed the last chunk, no need to update anything
-            if chunk_index < self.chunks.len() as u32 {
-                self.nodes[self.chunks[chunk_index as usize].index as usize].chunk = chunk_index;
-            }
-        }
-
-        // add new chunks
-        // we'll drain the vector here as well, as we won't need it anymore afterward
-        for ToAddContainer { position, chunk, parent_node_index:parent_index } in chunks_to_add_iter {
-            // add the node
-            let new_node_index = match self.free_list.pop() {
-                Some(x) => {
-                    // reuse a free node
-                    self.nodes[x as usize] = TreeNode {
-                        children: None,
-                        chunk: self.chunks.len() as u32,
-                    };
-                    self.chunks.push(ChunkContainer {
-                        index: x,
-                        chunk,
-                        position,
-                    });
-                    x
-                }
+            // insert done, fetch us the next target
+            tgt = match targets.next() {
+                Some(t) => t,
                 None => {
-                    // otherwise, use a new index
-                    self.nodes.push(TreeNode {
-                        children: None,
-                        chunk: self.chunks.len() as u32,
-                    });
-                    self.chunks.push(ChunkContainer {
-                        index: self.nodes.len() as u32 - 1,
-                        chunk,
-                        position,
-                    });
-                    (self.nodes.len() - 1) as u32
+                    break;
                 }
             };
-
-            // correctly set the children of the parent node.
-            // because the last node we come by in with ordered iteration is on num_children - 1, we need to set it as such].
-            // node 0 is the root, so the last child it has will be on num_children.
-            // then subtracting num_children - 1 from that gives us node 1, which is the first child of the root.
-            if new_node_index >= L::NUM_CHILDREN as u32 {
-                // because we loop in order, and our nodes are contiguous, the first node of the children got added on index i - (num children - 1)
-                // so we need to adjust for that
-                self.nodes[parent_index as usize].children =
-                    NonZeroU32::new(new_node_index - (L::NUM_CHILDREN - 1) as u32);
+            // walk up the tree until we are high enough to work on next target
+            //dbg!(&self.processing_queue);
+            while !addr.pos.contains_child_node(tgt) {
+                addr = self
+                    .processing_queue
+                    .pop()
+                    .expect("This should not happen, as we keep root in the stack");
+                //println!("Going up the stack to {addr:?} for target {tgt:?}");
             }
         }
+    }
 
-        // if there's only chunk left, we know it's the root, so we can get rid of all free nodes and unused nodes
-        if self.chunks.len() == 1 {
-            self.free_list.clear();
-            self.nodes.resize(
-                1,
-                TreeNode {
-                    children: None,
-                    chunk: 0,
-                },
-            );
+    pub fn pop_chunk_by_position(&mut self, pos: L) -> Option<C> {
+        let (child, node) = self.follow_nodes_to_position_mut(pos).ok()?;
+        let chunk_idx = node.chunk[child].take()?;
+        let chunk_rec = self.chunks.remove(chunk_idx);
+        Some(chunk_rec.chunk)
+    }
+
+    // Common part of various insert operations
+    fn insert_inner<V>(
+        &mut self,
+        addr: TreePos<N, L>,
+        tgt: L,
+        chunk_creator: &mut V,
+    ) -> ControlFlow<usize, TreePos<N, L>>
+    where
+        V: FnMut(L) -> C,
+    {
+        //dbg!(addr, tgt);
+        let child_idx = addr.pos.get_child_index(tgt);
+        let child_pos = addr.pos.get_child(child_idx);
+        let mut current_node = self.nodes.get_mut(addr.idx).expect("Node index broken!");
+        //println!("Current node {addr:?}");
+        if child_pos == tgt {
+            //println!("Found child {child_pos:?}, id {child_idx:?}");
+            let chunk = chunk_creator(tgt);
+            //perform actual insertion at this location
+            let inserted = match current_node.chunk[child_idx].get() {
+                Some(ci) => {
+                    self.chunks[ci].chunk = chunk;
+                    //println!("Found target, replacing existing chunk at {}", ci.get());
+                    ci
+                }
+                None => {
+                    let chunk_idx = self.chunks.insert(ChunkContainer {
+                        chunk,
+                        position: child_pos,
+                        node_idx: addr.idx as u32,
+                        child_idx: child_idx as u8,
+                    });
+                    //println!("Found target, inserting chunk at new index {chunk_idx}");
+                    current_node.chunk[child_idx] = ChunkPtr::from(Some(chunk_idx));
+                    chunk_idx
+                }
+            };
+            return ControlFlow::Break(inserted);
         }
 
-        // and clear all internal arrays, so if this method is accidentally called twice, no weird behavior would happen
-        self.chunks_to_add.clear();
-        self.chunks_to_remove.clear();
-        self.chunks_to_activate.clear();
-        self.chunks_to_deactivate.clear();
-    }*/
+        let idx = match current_node.children[child_idx] {
+            Some(idx) => idx.get() as usize,
+            None => {
+                //println!("Inserting new node");
+                // drop reference to current node to keep borrow checker happy
+                drop(current_node);
+                // modify nodes slab
+                let idx = self.nodes.insert(TreeNode::new());
+                // update pointer in parent node
+                self.nodes[addr.idx].children[child_idx] = NonZeroU32::new(idx as u32);
+                idx
+            }
+        };
+        ControlFlow::Continue(TreePos {
+            idx,
+            pos: child_pos,
+        })
+    }
 
+    /// Inserts/replaces a single chunk at specified location.
+    /// This operation will create necessary intermediate nodes to meet datastructure
+    /// constraints.
+    /// This operation may allocate memory.
+    ///
+    /// If you need to insert lots of chunks, use insert_many instead, it will probably be faster on deep trees.
+    /// returns index of inserted chunk.
+    pub fn insert<V>(&mut self, tgt: L, mut chunk_creator: V) -> usize
+    where
+        V: FnMut(L) -> C,
+    {
+        debug_assert!(self.nodes.len() > 0);
 
+        // start at the root node
+        let mut addr = TreePos {
+            pos: L::root(),
+            idx: 0,
+        };
 
-    /// clears the tree, removing all chunks and internal lists and cache
+        //println!("===Inserting target {tgt:?}===");
+        loop {
+            addr = match self.insert_inner(addr, tgt, &mut chunk_creator) {
+                ControlFlow::Continue(a) => a,
+                ControlFlow::Break(idx) => {
+                    break idx;
+                }
+            };
+        }
+    }
+
+    pub fn iter_chunks_mut(&mut self) -> slab::IterMut<ChunkContainer<N, C, L>> {
+        self.chunks.iter_mut()
+    }
+
+    pub fn iter_chunks(&mut self) -> slab::Iter<ChunkContainer<N, C, L>> {
+        self.chunks.iter()
+    }
+
+    /// clears the tree, removing all nodes, chunks and internal buffers
     #[inline]
     pub fn clear(&mut self) {
         self.chunks.clear();
+        let root = self.nodes.remove(0);
         self.nodes.clear();
-        /*self.chunks_to_add.clear();
-        self.chunks_to_remove.clear();
-        self.chunks_to_activate.clear();
-        self.chunks_to_deactivate.clear();*/
-
+        self.nodes.insert(root);
         self.processing_queue.clear();
     }
 
     /// Defragments the chunks array to enable fast iteration.
     /// This will have zero cost if array does not need defragmentation.
     /// The next update might take longer due to memory allocations.
-    pub fn defragment_chunks(&mut self){
-
-        todo!("rebuild the chunks by moving elements into holes in freelists");
+    pub fn defragment_chunks(&mut self) {
+        let nodes = &mut self.nodes;
+        self.chunks.compact(|chunk, cur, new| {
+            assert_eq!(
+                nodes[chunk.node_idx as usize].chunk[chunk.child_idx as usize]
+                    .get()
+                    .unwrap(),
+                cur
+            );
+            nodes[chunk.node_idx as usize].chunk[chunk.child_idx as usize] =
+                ChunkPtr::from(Some(new));
+            true
+        });
     }
 
-    /// Defragments the nodes array to enable fast iteration.
-    /// This will have zero cost if array does not need defragmentation.
+    /// Defragments the nodes array to enable faster operation.
+    /// This requires nodes to be copied, so this will allocate. Many unsafes would be needed otherwise.
     /// The next update might take longer due to memory allocations.
-    pub fn defragment_nodes(&mut self){
-        todo!("rebuild the tree nodes by moving elements into holes in freelists");
+    pub fn defragment_nodes(&mut self) {
+        let num_nodes = self.nodes.len();
+        // allocate a fresh slab for nodes that will not allocate unnecessarily
+        let mut new_nodes = Slab::with_capacity(num_nodes);
+
+        // move the root node to kick things off
+        new_nodes.insert(self.nodes.remove(0));
+
+        // for every index in new slab, move its children immediately after itself, keep doing that until all are moved.
+        // this will produce a breadth-first traverse of original nodes laid out in new memory, which should keep
+        // nearby nodes close in memory locations.
+        for n in 0..num_nodes {
+            // clone children array to keep it safe while we mess with it
+            let children = new_nodes[n].children.clone();
+            // now go over node's children and move them over
+            for (i, child) in iter_treenode_children(&children) {
+                // move the child into new slab
+                let new_idx = new_nodes.insert(self.nodes.remove(child));
+                // ensure slab is not doing anything fishy, and actually gives us correct indices
+                debug_assert_eq!(new_idx, n + i + 1);
+                // fix our reference to that child
+                new_nodes[n].children[i] = Some(NonZeroU32::new(new_idx as u32).unwrap());
+            }
+            // update node index of all chunks we are referring to
+            for c in new_nodes[n].chunk {
+                if let Some(i) = c.get() {
+                    self.chunks[i].node_idx = n as u32;
+                }
+            }
+        }
+        self.nodes = new_nodes;
     }
+
+    /// Prepares the tree for an LOD update. This operation reorganizes the nodes and
+    /// adds chunks around specified locations (targets) while also erasing all other chunks.
+    /// A side-effect of this is that nodes are defragmented.
+    /// # Params
+    /// * `targets` the target positions to generate the maximal level of detail around, e.g. players
+    /// * `detail` the size of the region which will be filled with max level of detail
+    /// * `chunk_creator` function to create a new chunk from a given position
+    /// * `evict_callback` function to dispose of unneeded chunks (can move them into cache or whatever)
+    pub fn lod_update<V, W>(&mut self, targets: &[L], detail: u32, mut chunk_creator: V, mut evict_callback: W)
+    where
+        V: FnMut(L) -> C,
+        W: FnMut(L, C),
+    {
+        let num_nodes = self.nodes.len();
+        // allocate room for new nodes (assuming it is about same amount as before update)
+        let mut new_nodes = Slab::with_capacity(num_nodes);
+
+        // move the root node to kick things off
+        new_nodes.insert(self.nodes.remove(0));
+
+        let mut new_positions = std::collections::VecDeque::with_capacity(B);
+        new_positions.push_back(L::root());
+        // for every index in new slab, move its children immediately after itself, keep doing that until all are moved.
+        // this will produce a breadth-first traverse of original nodes laid out in new memory, which should keep
+        // nearby nodes close in memory locations.
+        for n in 0..num_nodes {
+            let pos = new_positions.pop_front().unwrap();
+            // clone children array to keep it safe while we mess with it
+            let children = new_nodes[n].children.clone();
+
+            // now go over node's children
+            for (i, child) in children.iter().enumerate() {
+                // figure out position of child node
+                let child_pos = pos.get_child(i);
+                // figure if any of the targets needs it subdivided
+                let subdivide = targets.iter().any(|x| x.can_subdivide(child_pos, detail));
+                //dbg!(pos, child_pos, subdivide);
+                // if node is subdivided we do not want a chunk there,
+                // and in other case we need one
+                if let Some(i) = new_nodes[n].chunk[i].get(){
+                    if subdivide {
+                        let cont = self.chunks.remove(i);
+                        debug_assert_eq!(cont.position, child_pos);
+                        evict_callback(child_pos,cont.chunk);
+                        new_nodes[n].chunk[i] = ChunkPtr::None;
+                    }
+                    else {
+                        self.chunks[i].node_idx = n as u32;
+                    }
+                }
+                else{ // no chunk present
+                    if !subdivide {
+                        let chunk_idx = self.chunks.insert(ChunkContainer {
+                            chunk:chunk_creator(child_pos),
+                            position: child_pos,
+                            node_idx: n as u32,
+                            child_idx: i as u8,
+                        });
+                        new_nodes[n].chunk[i] = ChunkPtr::from(Some(chunk_idx));
+                    }
+                }
+
+                match (child, subdivide){
+                    // no node present but we need one
+                    (None, true) => {
+                        let new_idx = new_nodes.insert( TreeNode::new());
+                        // keep track of positions
+                        new_positions.push_back(child_pos);
+                        new_nodes[n].children[i] = Some(NonZeroU32::new(new_idx as u32).unwrap());
+
+                    },
+                    // no node present and we do not need one
+                    (None, false) => {},
+                    //existing node needed, keep it (same logic as in defragment_nodes)
+                    (Some(child_idx), true) => {
+                            // move the child into new slab
+                            let new_idx = new_nodes.insert(self.nodes.remove(child_idx.get() as usize));
+                            // keep track of positions
+                            new_positions.push_back(child_pos);
+                            // fix our reference to that child
+                            new_nodes[n].children[i] = Some(NonZeroU32::new(new_idx as u32).unwrap());
+
+                    },
+                    // existing node not needed, delete its chunks and do not copy over the node itself
+                    (Some(child_idx), false) => {
+                        for node in traverse(&self.nodes,  &self.nodes[child_idx.get() as usize]){
+                            for (_, cid) in node.iter_existing_chunks(){
+                                let cont =self.chunks.remove(cid);
+                                debug_assert!(child_pos.contains_child_node(cont.position));
+                                evict_callback(cont.position,cont.chunk);
+                            }
+                        }
+                        new_nodes[n].children[i] = None;
+                    },
+                };
+            }
+        }
+        self.nodes = new_nodes;
+    }
+
+
+
     /// Shrinks all internal buffers to fit actual need, reducing fragmentation and memory usage.
     ///
     /// The next update might take longer due to memory allocations.
@@ -514,31 +645,95 @@ where
 
         self.chunks.shrink_to_fit();
         self.nodes.shrink_to_fit();
-        /*
-        self.chunks_to_add.shrink_to_fit();
-        self.chunks_to_remove.shrink_to_fit();
-        self.chunks_to_activate.shrink_to_fit();
-        self.chunks_to_deactivate.shrink_to_fit();
-        self.chunks_to_delete.shrink_to_fit();*/
-        self.processing_queue.shrink_to_fit();
     }
-
-
-
 }
 
-impl<const N:usize, C, L> Default for Tree<N, C, L>
+
+/// Construct an itreator that traverses a subtree in nodes that begins in start (including start itself).
+pub fn traverse<'a, const B:usize>(nodes: &'a Slab<TreeNode<B>>, start: &'a TreeNode<B>)->TraverseIter<'a, B> {
+    let mut to_visit = arrayvec::ArrayVec::new();
+    to_visit.push(start);
+    TraverseIter{nodes,to_visit}
+}
+
+///Helper to perform breadth-first traverse of tree's nodes.
+pub struct TraverseIter<'a, const B:usize>
+{
+    nodes: &'a Slab<TreeNode<B>>,
+    //to_visit: Vec<&'a TreeNode<B>>,
+    to_visit: arrayvec::ArrayVec<&'a TreeNode<B>, B>,
+}
+
+impl  <'a,  const B:usize> Iterator for TraverseIter<'a,B>
+{
+    type Item = &'a TreeNode<B>;
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+
+       let current = self.to_visit.pop()?;
+       for c in current.children{
+        if let Some(c) = c{
+            self.to_visit.push(&self.nodes[c.get() as usize]);
+        }
+       }
+       return Some(current);
+    }
+}
+
+pub type OctTree<C, L> = Tree<3, 8, C, L>;
+impl<C, L> OctTree<C, L>
 where
     C: Sized,
-    L: LodVec<N>,
-    [(); L::MAX_CHILDREN]:
+    L: LodVec<3>,
 {
-    /// creates a new, empty tree, with no cache
+    /// creates a new, empty OctTree, with no cache
+    pub fn new() -> Self {
+        Self::with_capacity(1, 1)
+    }
+    /// Creates a OctTree with given capacity for nodes and chunks. Capacities should be > 1 both.
+    pub fn with_capacity(nodes_capacity: usize, chunks_capacity: usize) -> Self {
+        Tree::with_capacity_unsafe(nodes_capacity, chunks_capacity)
+    }
+}
+
+pub type QuadTree<C, L> = Tree<2, 4, C, L>;
+impl<C, L> QuadTree<C, L>
+where
+    C: Sized,
+    L: LodVec<2>,
+{
+    /// creates a new, empty QuadTree, with no cache
+    pub fn new() -> Self {
+        Self::with_capacity(1, 1)
+    }
+    /// Creates a QuadTree with given capacity for nodes and chunks. Capacities should be > 1 both.
+    pub fn with_capacity(nodes_capacity: usize, chunks_capacity: usize) -> Self {
+        Tree::with_capacity_unsafe(nodes_capacity, chunks_capacity)
+    }
+}
+
+impl<C, L> Default for OctTree<C, L>
+where
+    C: Sized,
+    L: LodVec<3>,
+{
+    /// creates a new, empty tree
     fn default() -> Self {
         Self::new()
     }
 }
 
+impl<C, L> Default for QuadTree<C, L>
+where
+    C: Sized,
+    L: LodVec<2>,
+{
+    /// creates a new, empty tree
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -547,69 +742,51 @@ mod tests {
 
     struct TestChunk;
 
-/*    #[test]
-    fn update_tree() {
+    #[test]
+    fn lod_update() {
         // make a tree
-        let mut tree = Tree::<TestChunk, QuadVec>::new();
+        let mut tree = QuadTree::<TestChunk, QuadVec>::new();
         // as long as we need to update, do so
-        for tgt in [QuadVec::build(1, 1, 2), QuadVec::build(2, 3, 2)] {
-            dbg!(tgt);
-            while tree.prepare_update(&[tgt], 0, &mut |_| TestChunk {}) {
-                for c in tree.iter_chunks_to_activate_positions() {
-                    println!("* {c:?}");
-                }
-                for c in tree.iter_chunks_to_deactivate_positions() {
-                    println!("o {c:?}");
-                }
+        //let targets = [QuadVec::build(1, 1, 2), QuadVec::build(2, 3, 2)];
+        let targets = [QuadVec::build(3, 3, 3)];
 
-                for c in tree.iter_chunks_to_remove_positions() {
-                    println!("- {c:?}");
-                }
+        tree.lod_update(&targets, 2, &mut |_| TestChunk {}, |p, _|{println!("Evicting chunk {p:?}");});
+                // for c in tree.iter_chunks_to_activate_positions() {
+                //     println!("* {c:?}");
+                // }
+                // for c in tree.iter_chunks_to_deactivate_positions() {
+                //     println!("o {c:?}");
+                // }
+                //
+                // for c in tree.iter_chunks_to_remove_positions() {
+                //     println!("- {c:?}");
+                // }
+                //
+                // for c in tree.iter_chunks_to_add_positions() {
+                //     println!("+ {c:?}");
+                // }
 
-                for c in tree.iter_chunks_to_add_positions() {
-                    println!("+ {c:?}");
-                }
-                println!("updating...");
-                // and actually update
-                tree.do_update();
-            }
-        }
     }
     #[test]
     fn insert_into_tree() {
         // make a tree
-        let mut tree = Tree::<TestChunk, QuadVec>::new();
+        let mut tree = QuadTree::<TestChunk, QuadVec>::new();
         // as long as we need to update, do so
-        for tgt in [
-            QuadVec::build(1, 1, 1),
-            QuadVec::build(0, 1, 1),
-            QuadVec::build(2, 3, 2),
-            QuadVec::build(2, 2, 2),
-        ] {
-            println!("====NEXT TARGET =====");
-            dbg!(tgt);
-            while tree.prepare_insert(&[tgt], 0, &mut |_| TestChunk {}) {
-                for c in tree.iter_chunks_to_activate_positions() {
-                    println!("* {c:?}");
-                }
-                for c in tree.iter_chunks_to_deactivate_positions() {
-                    println!("o {c:?}");
-                }
+        let targets = [
+            QuadVec::build(1u8, 1u8, 1u8),
+            QuadVec::build(2u8, 3u8, 2u8),
+            QuadVec::build(2u8, 2u8, 2u8),
+            QuadVec::build(0u8, 1u8, 1u8),
+        ];
 
-                for c in tree.iter_chunks_to_remove_positions() {
-                    println!("- {c:?}");
-                }
+        tree.insert_many(targets.iter().copied(), |_| TestChunk {});
 
-                for c in tree.iter_chunks_to_add_positions() {
-                    println!("+ {c:?}");
-                }
-                println!("updating...");
-                // and actually update
-                tree.do_update();
-            }
+        let mut tree2 = QuadTree::<TestChunk, QuadVec>::new();
+        for t in targets {
+            tree2.insert(t, |_| TestChunk {});
         }
     }
-*/
+
     #[test]
     pub fn things() {
         //
@@ -653,7 +830,21 @@ mod tests {
         // }
     }
     #[test]
+    pub fn defragment_chunks() {}
+    #[test]
+    pub fn defragment_nodes() {}
+
+    #[test]
     pub fn alignment() {
-        assert_eq!(std::mem::size_of::<TreeNode>(), 64);
+        assert_eq!(
+            std::mem::size_of::<TreeNode<8>>(),
+            64,
+            "Octree node should be 64 bytes"
+        );
+        assert_eq!(
+            std::mem::size_of::<TreeNode<4>>(),
+            32,
+            "Quadtree node should be 32 bytes"
+        );
     }
 }
