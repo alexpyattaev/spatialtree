@@ -2,6 +2,8 @@
 
 use std::cmp::Ordering;
 
+pub const MAX_DEPTH:u8 = 60;
+
 pub trait LodVec<const N: usize>:
     std::hash::Hash + Eq + Sized + Copy + Clone + Send + Sync + std::fmt::Debug + PartialOrd
 {
@@ -145,13 +147,13 @@ impl<const N: usize, DT> CoordVec<N, DT>
 where
     DT: ReasonableIntegerLike,
 {
-    /// creates a new vector from the raw x and y coords.
+    /// creates a new coordinate vector from components
     /// # Args
     /// * `coord` The position in the tree. Allowed range scales with the depth (doubles as the depth increases by one)
-    /// * `depth` the lod depth the coord is at. This is soft limited at roughly 60, and the tree might behave weird if it gets higher
+    /// * `depth` the depth the coord is at. This is hard limited at 60 to preserve sanity.
     #[inline]
     pub fn new(pos: [DT; N], depth: u8) -> Self {
-        debug_assert!(depth <= 60);
+        debug_assert!(depth <= MAX_DEPTH);
         debug_assert!(
             pos.iter().all(|e| { e.tousize() < (1 << depth) }),
             "All components of position should be < 2^depth"
@@ -178,7 +180,7 @@ where
     }
 
     /// converts the coord into float coords.
-    /// Returns a slice of f64 to represent the coordinates, at the front bottom left corner.
+    /// Returns a slice of f32 to represent the coordinates, at the front bottom left corner.
     #[inline]
     pub fn float_coords(self) -> [f32; N] {
         // scaling factor to scale the coords down with
@@ -210,6 +212,7 @@ where
 
     #[inline]
     fn get_child(self, index: usize) -> Self {
+
         debug_assert!(index < <CoordVec<N> as LodVec<N>>::MAX_CHILDREN);
         let mut new = Self::root();
         //println!("GetChild for {:?} idx {}", self,index);
@@ -221,6 +224,7 @@ where
             new.pos[i] = DT::fromusize(p);
         }
         new.depth = self.depth + 1;
+        debug_assert!(new.depth < MAX_DEPTH);
         new
     }
 

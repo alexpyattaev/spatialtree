@@ -134,7 +134,7 @@ fn draw(mouse_pos: (f32, f32), tree: &mut QuadTree<Chunk, QuadVec>, ctx: &Render
         }
     }
 
-    let qv = QuadVec::from_float_coords([mouse_pos.0, (1.0 - mouse_pos.1)], 5);
+    let qv = QuadVec::from_float_coords([mouse_pos.0, (1.0 - mouse_pos.1)], 6);
     tree.lod_update(&[qv], 2, chunk_creator, |_, _| {});
     // make sure there are no holes in chunks array for fast iteration
     tree.defragment_chunks();

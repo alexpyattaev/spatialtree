@@ -185,11 +185,14 @@ where
         bound_max: L,
     ) -> ChunksInBoundIter<N, B, C, L> {
         debug_assert_eq!(bound_min.depth(), bound_max.depth());
+        // TODO: better estimate for needed capacity here? Smallvec?
+        let mut to_visit = Vec::with_capacity(16);
+        to_visit.push(TreePos {
+            idx: 0,
+            pos: L::root(),
+        });
         ChunksInBoundIter {
-            to_visit: vec![TreePos {
-                idx: 0,
-                pos: L::root(),
-            }],
+            to_visit,
             to_return: arrayvec::ArrayVec::new(),
             tree: self,
             max_depth: bound_min.depth(),
@@ -206,12 +209,13 @@ where
         bound_max: L,
     ) -> ChunksInBoundIterMut<N, B, C, L> {
         debug_assert_eq!(bound_min.depth(), bound_max.depth());
-
+        let mut to_visit = Vec::with_capacity(16);
+        to_visit.push(TreePos {
+            idx: 0,
+            pos: L::root(),
+        });
         ChunksInBoundIterMut {
-            to_visit: vec![TreePos {
-                idx: 0,
-                pos: L::root(),
-            }],
+            to_visit,
             to_return: arrayvec::ArrayVec::new(),
             tree: self,
             max_depth: bound_min.depth(),

@@ -150,10 +150,9 @@ pub struct Tree<const N: usize, const B: usize, C: Sized, L: LodVec<N>> {
     pub(crate) chunks: Slab<ChunkContainer<N, C, L>>,
     /// All nodes of the Tree
     pub(crate) nodes: Slab<TreeNode<B>>,
+    /// Temporary buffer for nodes used during rebuilds
+    new_nodes: Slab<TreeNode<B>>,
 
-    /// Internal queue for batch processing, it will be as long as maximal depth of the tree.
-    /// Single inserts and erases do not operate with this.
-    processing_queue: Vec<TreePos<N, L>>,
 }
 
 impl<const N: usize, const B: usize, C, L> Tree<N, B, C, L>
@@ -180,7 +179,7 @@ where
         Self {
             chunks: Slab::with_capacity(chunks_capacity),
             nodes,
-            processing_queue: Vec::with_capacity(4),
+            new_nodes:Slab::new(),
         }
     }
 
@@ -326,8 +325,10 @@ where
         V: FnMut(L) -> C,
     {
         debug_assert!(self.nodes.len() > 0);
-        // clear the processing queue from any previous updates
-        self.processing_queue.clear();
+
+        // Internal queue for batch processing, it will be as long as maximal depth of the tree.
+        // Stack allocated since it is only ~200 bytes, and this keeps things cache-friendly.
+        let mut queue= arrayvec::ArrayVec::< TreePos<N, L>, {MAX_DEPTH as usize}>::new();
 
         // start at the root node
         let mut addr = TreePos {
@@ -345,7 +346,7 @@ where
                         break;
                     }
                     ControlFlow::Continue(a) => {
-                        self.processing_queue.push(addr);
+                        queue.push(addr);
                         a
                     }
                 };
@@ -360,9 +361,7 @@ where
             // walk up the tree until we are high enough to work on next target
             //dbg!(&self.processing_queue);
             while !addr.pos.contains_child_node(tgt) {
-                addr = self
-                    .processing_queue
-                    .pop()
+                addr = queue.pop()
                     .expect("This should not happen, as we keep root in the stack");
                 //println!("Going up the stack to {addr:?} for target {tgt:?}");
             }
@@ -480,7 +479,6 @@ where
         let root = self.nodes.remove(0);
         self.nodes.clear();
         self.nodes.insert(root);
-        self.processing_queue.clear();
     }
 
     /// Defragments the chunks array to enable fast iteration.
@@ -506,31 +504,31 @@ where
     /// The next update might take longer due to memory allocations.
     pub fn defragment_nodes(&mut self) {
         let num_nodes = self.nodes.len();
-        // allocate a fresh slab for nodes that will not allocate unnecessarily
-        let mut new_nodes = Slab::with_capacity(num_nodes);
+        // allocate for all nodes since we know their exact number
+        self.new_nodes.reserve(num_nodes);
 
         // move the root node to kick things off
-        new_nodes.insert(self.nodes.remove(0));
+        self.new_nodes.insert(self.nodes.remove(0));
 
         // for every index in new slab, move its children immediately after itself, keep doing that until all are moved.
         // this will produce a breadth-first traverse of original nodes laid out in new memory, which should keep
         // nearby nodes close in memory locations.
         for n in 0..num_nodes {
             // clone children array to keep it safe while we mess with it
-            let children = new_nodes[n].children.clone();
+            let children = self.new_nodes[n].children.clone();
             // now go over node's children and move them over
             for (i, old_idx) in iter_treenode_children(&children) {
                 // move the child into new slab
-                let new_idx = new_nodes.insert(self.nodes.remove(old_idx));
+                let new_idx = self.new_nodes.insert(self.nodes.remove(old_idx));
                 // ensure slab is not doing anything fishy, and actually gives us correct indices
                 debug_assert_eq!(new_idx, n + i + 1);
                 // fix our reference to that child
-                new_nodes[n].children[i] = Some(NonZeroU32::new(new_idx as u32).unwrap());
+                self.new_nodes[n].children[i] = Some(NonZeroU32::new(new_idx as u32).unwrap());
 
                 // if the position of the node has changed
                 if new_idx != old_idx {
                     // update node index of all chunks we are referring to
-                    for (_, chunk_idx) in new_nodes[new_idx].iter_existing_chunks() {
+                    for (_, chunk_idx) in self.new_nodes[new_idx].iter_existing_chunks() {
                         self.chunks[chunk_idx].node_idx = new_idx as u32;
                     }
                 }
@@ -538,7 +536,8 @@ where
 
 
         }
-        self.nodes = new_nodes;
+        std::mem::swap(&mut self.nodes,&mut self.new_nodes);
+        self.new_nodes.clear();
     }
 
     /// Prepares the tree for an LOD update. This operation reorganizes the nodes and
@@ -561,11 +560,13 @@ where
     {
         let num_nodes = self.nodes.len();
         // allocate room for new nodes (assuming it is about same amount as before update)
-        let mut new_nodes = Slab::with_capacity(num_nodes);
+        // better to overallocate here than to allocate twice.
+        //let mut new_nodes = Slab::with_capacity(num_nodes);
+        self.new_nodes.reserve(num_nodes);
         let mut new_positions = std::collections::VecDeque::with_capacity(B);
 
         // move the root node to kick things off
-        new_nodes.insert(self.nodes.remove(0));
+        self.new_nodes.insert(self.nodes.remove(0));
         new_positions.push_back(L::root());
 
         // for every index in new slab, move its children immediately after itself, keep doing that until all are moved.
@@ -577,7 +578,7 @@ where
                 None=>break
             };
             // clone children array to keep it safe while we mess with it
-            let children = new_nodes[n].children.clone();
+            let children = self.new_nodes[n].children.clone();
 
             // now go over node's children
             for (b, maybe_child) in children.iter().enumerate() {
@@ -589,7 +590,7 @@ where
 
                 // if child is subdivided we do not want a chunk there,
                 // and in other case we need one, so we make one if necessary
-                match (new_nodes[n].chunk[b].get(),subdivide) {
+                match (self.new_nodes[n].chunk[b].get(),subdivide) {
                     ( None,true) => {
                         //println!("No chunks present");
                     },
@@ -597,7 +598,7 @@ where
                         let cont = self.chunks.remove(chunk_idx);
                         debug_assert_eq!(cont.position, child_pos);
                         evict_callback(child_pos, cont.chunk);
-                        new_nodes[n].chunk[b] = ChunkPtr::None;
+                        self.new_nodes[n].chunk[b] = ChunkPtr::None;
                     },
                     (None,false) => {
                         let chunk_idx = self.chunks.insert(ChunkContainer {
@@ -607,7 +608,7 @@ where
                             child_idx: b as u8,
                         });
 
-                        new_nodes[n].chunk[b] = ChunkPtr::from(Some(chunk_idx));
+                        self.new_nodes[n].chunk[b] = ChunkPtr::from(Some(chunk_idx));
                     },
                     (Some(chunk_idx),false) => {
                         //println!("Preserve chunk at index {chunk_idx}");
@@ -619,21 +620,21 @@ where
                 match (maybe_child, subdivide) {
                     // no node present but we need one
                     (None, true) => {
-                        let new_idx = new_nodes.insert(TreeNode::new());
+                        let new_idx = self.new_nodes.insert(TreeNode::new());
                         // keep track of positions
                         new_positions.push_back(child_pos);
-                        new_nodes[n].children[b] = Some(NonZeroU32::new(new_idx as u32).unwrap());
+                        self.new_nodes[n].children[b] = Some(NonZeroU32::new(new_idx as u32).unwrap());
                     }
                     // no node present and we do not need one
                     (None, false) => {}
                     //existing node needed, keep it (same logic as in defragment_nodes)
                     (Some(child_idx), true) => {
                         // move the child into new slab
-                        let new_idx = new_nodes.insert(self.nodes.remove(child_idx.get() as usize));
+                        let new_idx = self.new_nodes.insert(self.nodes.remove(child_idx.get() as usize));
                         // keep track of positions
                         new_positions.push_back(child_pos);
                         // fix our reference to that child
-                        new_nodes[n].children[b] = Some(NonZeroU32::new(new_idx as u32).unwrap());
+                        self.new_nodes[n].children[b] = Some(NonZeroU32::new(new_idx as u32).unwrap());
                     }
                     // existing node not needed, delete its chunks and do not copy over the node itself
                     (Some(child_idx), false) => {
@@ -644,25 +645,23 @@ where
                                 evict_callback(cont.position, cont.chunk);
                             }
                         }
-                        new_nodes[n].children[b] = None;
+                        self.new_nodes[n].children[b] = None;
                     }
                 };
             }
         }
-        self.nodes = new_nodes;
-
+        std::mem::swap(&mut self.nodes,&mut self.new_nodes);
+        self.new_nodes.clear();
     }
 
-    /// Shrinks all internal buffers to fit actual need, reducing fragmentation and memory usage.
-    ///
+    /// Shrinks all internal buffers to fit actual need, reducing memory usage.
+    /// Calling defragment_chunks() and defragment_nodes() before this is advisable.
     /// The next update might take longer due to memory allocations.
     #[inline]
-    pub fn shrink(&mut self) {
-        self.defragment_chunks();
-        self.defragment_nodes();
-
+    pub fn shrink_to_fit(&mut self) {
         self.chunks.shrink_to_fit();
         self.nodes.shrink_to_fit();
+        self.new_nodes.shrink_to_fit();
     }
 }
 
@@ -671,7 +670,8 @@ pub fn traverse<'a, const B: usize>(
     nodes: &'a Slab<TreeNode<B>>,
     start: &'a TreeNode<B>,
 ) -> TraverseIter<'a, B> {
-    let mut to_visit = arrayvec::ArrayVec::new();
+    //todo use better logic here!
+    let mut to_visit = Vec::with_capacity(8*B);//arrayvec::ArrayVec::new();
     to_visit.push(start);
     TraverseIter { nodes, to_visit }
 }
@@ -679,8 +679,8 @@ pub fn traverse<'a, const B: usize>(
 ///Helper to perform breadth-first traverse of tree's nodes.
 pub struct TraverseIter<'a, const B: usize> {
     nodes: &'a Slab<TreeNode<B>>,
-    //to_visit: Vec<&'a TreeNode<B>>,
-    to_visit: arrayvec::ArrayVec<&'a TreeNode<B>, B>,
+    to_visit: Vec<&'a TreeNode<B>>,
+    //to_visit: arrayvec::ArrayVec<&'a TreeNode<B>, B>,
 }
 
 impl<'a, const B: usize> Iterator for TraverseIter<'a, B> {
@@ -689,10 +689,8 @@ impl<'a, const B: usize> Iterator for TraverseIter<'a, B> {
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         let current = self.to_visit.pop()?;
-        for c in current.children {
-            if let Some(c) = c {
-                self.to_visit.push(&self.nodes[c.get() as usize]);
-            }
+        for (_,c) in iter_treenode_children(&current.children) {
+            self.to_visit.push(&self.nodes[c]);
         }
         return Some(current);
     }
