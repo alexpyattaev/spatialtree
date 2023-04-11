@@ -135,8 +135,9 @@ fn draw(mouse_pos: (f32, f32), tree: &mut QuadTree<Chunk, QuadVec>, ctx: &Render
     }
 
     let qv = QuadVec::from_float_coords([mouse_pos.0, (1.0 - mouse_pos.1)], 5);
-    tree.lod_update(&[qv], 2, chunk_creator, |_,_|{});
-
+    tree.lod_update(&[qv], 2, chunk_creator, |_, _| {});
+    // make sure there are no holes in chunks array for fast iteration
+    tree.defragment_chunks();
     // and select the chunk at the mouse position
     if let Some(chunk) = tree.get_chunk_from_position_mut(qv) {
         chunk.selected = true;

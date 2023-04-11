@@ -121,15 +121,14 @@ mod tests {
     }
 
     #[test]
-    fn can_subdivide(){
+    fn can_subdivide() {
         let z: QuadVec = QuadVec::root();
         let c1 = z.get_child(0);
         let c12 = c1.get_child(0);
-        let tgt = QuadVec::build(0,0,2);
-
+        let tgt = QuadVec::build(0, 0, 2);
 
         println!("{tgt:?}, {c12:?}, {}", tgt.can_subdivide(c12, 3));
-        println!("{tgt:?}, {c1:?}, {}",tgt.can_subdivide(c1, 3));
+        println!("{tgt:?}, {c1:?}, {}", tgt.can_subdivide(c1, 3));
     }
 }
 
@@ -284,14 +283,16 @@ where
         // minimum corner of the bounding box
         let min = node.pos.iter().map(|e| {
             let x = e.tousize();
-            let x = (x << (level_difference + 1)).saturating_sub(((detail + 1) << level_difference) - (1 << level_difference));
+            let x = (x << (level_difference + 1))
+                .saturating_sub(((detail + 1) << level_difference) - (1 << level_difference));
             DT::fromusize(x)
         });
 
         // maximum corner of the bounding box
         let max = node.pos.iter().map(|e| {
             let x = e.tousize();
-            let x = (x << (level_difference + 1)).saturating_add(((detail + 1) << level_difference) + (1 << level_difference));
+            let x = (x << (level_difference + 1))
+                .saturating_add(((detail + 1) << level_difference) + (1 << level_difference));
             DT::fromusize(x)
         });
 
@@ -299,15 +300,13 @@ where
         let minmax = min.zip(max);
 
         // local position of the target, moved one lod level higher to allow more detail
-        let local = node.pos.iter().map(|e| {
-            *e<<1usize
-        });
-
-
+        let local = self.pos.iter().map(|e| *e << 1usize);
+        //println!("Check tgt {self:?} wrt {node:?}");
         // check if the target is inside of the bounding box
-        local.zip(minmax).all(|(c, (min,  max))|{
-            min <= c && c<max
-        })
+        local.zip(minmax).all(|(c, (min, max))| {
+          //  println!("{min:?} <= {c:?} < {max:?}");
+            min <= c && c < max}
+        )
     }
 }
 
@@ -319,10 +318,7 @@ where
     DT: ReasonableIntegerLike,
 {
     pub fn build(x: DT, y: DT, z: DT, depth: u8) -> Self {
-        Self {
-            pos: [x, y, z],
-            depth,
-        }
+        Self::new([x, y, z],depth)
     }
 }
 
@@ -331,7 +327,7 @@ where
     DT: ReasonableIntegerLike,
 {
     pub fn build(x: DT, y: DT, depth: u8) -> Self {
-        Self { pos: [x, y], depth }
+        Self::new([x, y],depth)
     }
 }
 

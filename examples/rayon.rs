@@ -1,5 +1,4 @@
-use lodtree::coords::OctVec;
-use lodtree::*;
+/*use spatialtree::*;
 use rayon::prelude::*;
 
 struct Chunk {
@@ -34,7 +33,7 @@ impl Chunk {
 
 fn main() {
     // create an octree
-    let mut tree = Tree::<Chunk, OctVec>::new(512);
+    let mut tree = OctTree::<Chunk, OctVec>::with_capacity(512, 512);
 
     // the game loop that runs for 42 iterations
     for _ in 0..42 {
@@ -65,14 +64,6 @@ fn main() {
                 },
             );
 
-            // and make all chunks visible or not
-            for chunk in tree.iter_chunks_to_activate_mut() {
-                chunk.set_visible(true);
-            }
-
-            for chunk in tree.iter_chunks_to_deactivate_mut() {
-                chunk.set_visible(false);
-            }
 
             let start_time = std::time::Instant::now();
 
@@ -100,3 +91,6 @@ fn main() {
         println!("Num chunks in the tree: {}", tree.get_num_chunks());
     }
 }
+*/
+
+fn main() {}
