@@ -15,7 +15,7 @@ pub trait LodVec<const N: usize>:
     /// returns index of child for a given child position (reciprocal of get_child)
     fn get_child_index(self, child: Self) -> usize;
 
-    /// the number of child nodes a node can have in the tree.
+    /// tests if given node is a child of self.
     fn contains_child_node(self, child: Self) -> bool;
 
     /// returns the lod vector as if it's at the root of the tree.
@@ -41,19 +41,23 @@ pub trait LodVec<const N: usize>:
     fn depth(self) -> u8;
 }
 
+
 pub trait ReasonableIntegerLike:
     Default
-    + num::Integer
+    + core::cmp::Eq
+    + core::cmp::Ord
+    //+ num_traits::NumAssignRef + num_traits::NumOps + num_traits::NumAssignOps + num_traits::NumAssign
+    //+ num_traits::NumRef
     + std::marker::Send
     + std::marker::Sync
     + std::fmt::Debug
     + Copy
     + std::hash::Hash
-    + std::ops::Shl<isize, Output = Self>
-    + std::ops::Shr<isize, Output = Self>
-    + std::ops::Shl<usize, Output = Self>
-    + std::ops::Shr<usize, Output = Self>
-    + std::ops::BitAnd<Self, Output = Self>
+    // + std::ops::Shl<isize, Output = Self>
+    // + std::ops::Shr<isize, Output = Self>
+    // + std::ops::Shl<usize, Output = Self>
+    // + std::ops::Shr<usize, Output = Self>
+    // + std::ops::BitAnd<Self, Output = Self>
 {
     fn fromusize(value: usize) -> Self;
     fn tousize(self) -> usize;
@@ -63,9 +67,11 @@ pub trait ReasonableIntegerLike:
 macro_rules! reasonable_int_impl {
     (  $x:ty  ) => {
         impl ReasonableIntegerLike for $x {
+                #[inline(always)]
             fn fromusize(value: usize) -> Self {
                 value as $x
             }
+                #[inline(always)]
             fn tousize(self) -> usize {
                 self as usize
             }
@@ -151,7 +157,7 @@ where
     /// # Args
     /// * `coord` The position in the tree. Allowed range scales with the depth (doubles as the depth increases by one)
     /// * `depth` the depth the coord is at. This is hard limited at 60 to preserve sanity.
-    #[inline]
+    #[inline(always)]
     pub fn new(pos: [DT; N], depth: u8) -> Self {
         debug_assert!(depth <= MAX_DEPTH);
         debug_assert!(
@@ -167,7 +173,7 @@ where
     /// # Args
     /// * `pos` coordinates of the float vector, from 0 to 1
     /// * `depth` The lod depth of the coord
-    #[inline]
+    #[inline(always)]
     pub fn from_float_coords(pos: [f32; N], depth: u8) -> Self {
         // scaling factor due to the lod depth
         let scale_factor = (1 << depth) as f32;
@@ -181,7 +187,7 @@ where
 
     /// converts the coord into float coords.
     /// Returns a slice of f32 to represent the coordinates, at the front bottom left corner.
-    #[inline]
+    #[inline(always)]
     pub fn float_coords(self) -> [f32; N] {
         // scaling factor to scale the coords down with
         let scale_factor = 1.0 / (1 << self.depth) as f32;
@@ -189,7 +195,7 @@ where
     }
 
     /// gets the size the chunk of this lod vector takes up, with the root taking up the entire area.
-    #[inline]
+    #[inline(always)]
     pub fn float_size(self) -> f32 {
         1.0 / (1 << self.depth) as f32
     }
@@ -197,20 +203,21 @@ where
 
 impl<const N: usize, DT> LodVec<N> for CoordVec<N, DT>
 where
-    DT: ReasonableIntegerLike,
+    DT: ReasonableIntegerLike
 {
+    #[inline(always)]
     fn root() -> Self {
         Self {
             pos: [DT::default(); N],
             depth: 0,
         }
     }
-
+    #[inline(always)]
     fn depth(self) -> u8 {
         return self.depth;
     }
 
-    #[inline]
+    #[inline(always)]
     fn get_child(self, index: usize) -> Self {
 
         debug_assert!(index < <CoordVec<N> as LodVec<N>>::MAX_CHILDREN);
@@ -227,7 +234,7 @@ where
         debug_assert!(new.depth < MAX_DEPTH);
         new
     }
-
+    #[inline]
     fn get_child_index(self, child: Self) -> usize {
         debug_assert!(self.depth < child.depth);
         let level_difference = child.depth - self.depth;
@@ -242,19 +249,23 @@ where
         }
         idx
     }
-
+    #[inline]
     fn contains_child_node(self, child: Self) -> bool {
+        if self.depth >= child.depth{
+            return false;
+        }
         // basically, move the child node up to this level and check if they're equal
         let level_difference = child.depth as isize - self.depth as isize;
+
         self.pos
             .iter()
             .zip(child.pos)
-            .all(|(s, c)| *s == (c >> level_difference))
+            .all(|(s, c)| s.tousize() == (c.tousize() >> level_difference))
     }
-
+    #[inline(always)]
     fn is_inside_bounds(self, min: Self, max: Self, max_depth: u8) -> bool {
         // get the lowest lod level
-        let level = *[self.depth, min.depth, max.depth].iter().min().unwrap() as isize;
+        let level = *[self.depth, min.depth, max.depth].iter().min().expect("Starting array not empty") as isize;
         //dbg!(level);
         // bring all coords to the lowest level
         let self_difference: isize = self.depth as isize - level;
@@ -263,17 +274,20 @@ where
         //println!("diff {:?},  {:?}, {:?}", self_difference, min_difference, max_difference);
         // get the coords to that level
 
-        let self_lowered = self.pos.map(|e| e >> self_difference);
-        let min_lowered = min.pos.map(|e| e >> min_difference);
-        let max_lowered = max.pos.map(|e| e >> max_difference);
+        let self_lowered = self.pos.iter().map(|e| e.tousize() >> self_difference);
+        let min_lowered = min.pos.iter().map(|e| e.tousize() >> min_difference);
+        let max_lowered = max.pos.iter().map(|e| e.tousize() >> max_difference);
         //println!("lowered {self_lowered:?},  {min_lowered:?}, {max_lowered:?}");
         // then check if we are inside the AABB
-        self.depth <= max_depth
+        /*self.depth <= max_depth
             && itertools::izip!(self_lowered, min_lowered, max_lowered)
-                .all(|(slf, min, max)| slf >= min && slf <= max)
+                .all(|(slf, min, max)| slf >= min && slf <= max)*/
+        self.depth <= max_depth && self_lowered.zip(min_lowered.zip(max_lowered)).all(
+            |(slf, (min, max))|{slf >= min && slf <= max}
+        )
     }
 
-    #[inline]
+    #[inline(always)]
     fn can_subdivide(self, node: Self, detail: u32) -> bool {
         let detail = detail as usize;
         // return early if the level of this chunk is too high
@@ -289,7 +303,7 @@ where
             let x = e.tousize();
             let x = (x << (level_difference + 1))
                 .saturating_sub(((detail + 1) << level_difference) - (1 << level_difference));
-            DT::fromusize(x)
+            x
         });
 
         // maximum corner of the bounding box
@@ -297,14 +311,14 @@ where
             let x = e.tousize();
             let x = (x << (level_difference + 1))
                 .saturating_add(((detail + 1) << level_difference) + (1 << level_difference));
-            DT::fromusize(x)
+            x
         });
 
         // iterator over bounding boxes
         let minmax = min.zip(max);
 
         // local position of the target, moved one lod level higher to allow more detail
-        let local = self.pos.iter().map(|e| *e << 1usize);
+        let local = self.pos.iter().map(|e| e.tousize() << 1);
         //println!("Check tgt {self:?} wrt {node:?}");
         // check if the target is inside of the bounding box
         local.zip(minmax).all(|(c, (min, max))| {
@@ -321,6 +335,7 @@ impl<DT> OctVec<DT>
 where
     DT: ReasonableIntegerLike,
 {
+    #[inline(always)]
     pub fn build(x: DT, y: DT, z: DT, depth: u8) -> Self {
         Self::new([x, y, z],depth)
     }
@@ -330,6 +345,7 @@ impl<DT> QuadVec<DT>
 where
     DT: ReasonableIntegerLike,
 {
+    #[inline(always)]
     pub fn build(x: DT, y: DT, depth: u8) -> Self {
         Self::new([x, y],depth)
     }
@@ -339,6 +355,7 @@ impl<const N: usize, DT> PartialOrd for CoordVec<N, DT>
 where
     DT: ReasonableIntegerLike,
 {
+    #[inline]
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         if self.depth != other.depth {
             return None;
@@ -359,15 +376,15 @@ where
 
 impl<const N: usize, DT> std::ops::Add for CoordVec<N, DT>
 where
-    DT: ReasonableIntegerLike,
+    DT: ReasonableIntegerLike + std::ops::AddAssign,
 {
     type Output = Self;
-
+    #[inline]
     fn add(self, rhs: Self) -> Self::Output {
         debug_assert_eq!(self.depth, rhs.depth);
         let mut res = self.clone();
         for (e1, e2) in res.pos.iter_mut().zip(rhs.pos) {
-            *e1 = *e1 + e2;
+            *e1+= e2;
         }
         res
     }
@@ -377,11 +394,14 @@ impl<const N: usize, DT> Default for CoordVec<N, DT>
 where
     DT: ReasonableIntegerLike,
 {
+    #[inline]
     fn default() -> Self {
         Self::root()
     }
 }
 
+
+#[inline]
 pub fn get_chunk_count_at_max_depth<const N: usize>(a: CoordVec<N>, b: CoordVec<N>) -> usize {
     assert_eq!(a.depth, b.depth);
     b.pos
@@ -390,7 +410,8 @@ pub fn get_chunk_count_at_max_depth<const N: usize>(a: CoordVec<N>, b: CoordVec<
         .fold(1, |acc, (e1, e2)| acc * (e1 - e2 + 1) as usize)
 }
 
-//#[cfg(feature = "rand")]
+#[cfg(feature = "rand")]
+#[inline]
 pub fn rand_cv<const N: usize, R: rand::Rng, T>(
     rng: &mut R,
     min: CoordVec<N, T>,

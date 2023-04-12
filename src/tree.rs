@@ -17,6 +17,7 @@ pub type NodePtr = Option<NonZeroU32>;
 #[derive(PartialEq, Eq, Clone, Copy, Debug)]
 pub struct ChunkPtr(i32);
 impl core::fmt::Display for ChunkPtr {
+        #[inline]
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_fmt(format_args!("ChunkPtr({:?})", self.get()))
     }
@@ -84,6 +85,7 @@ pub struct TreeNode<const N: usize> {
 }
 
 impl<const N: usize> TreeNode<N> {
+        #[inline]
     fn new() -> Self {
         Self {
             children: [NodePtr::None; N],
@@ -91,6 +93,7 @@ impl<const N: usize> TreeNode<N> {
         }
     }
 
+    #[inline]
     pub fn iter_existing_chunks<'a>(
         &'a self,
     ) -> impl core::iter::Iterator<Item = (usize, usize)> + 'a {
@@ -98,6 +101,7 @@ impl<const N: usize> TreeNode<N> {
     }
 }
 
+#[inline]
 pub fn iter_treenode_children<'a, const N: usize>(
     children: &'a [NodePtr; N],
 ) -> impl core::iter::Iterator<Item = (usize, usize)> + 'a {
@@ -338,6 +342,7 @@ where
 
         let mut tgt = targets.next().expect("Expected at least one target");
         loop {
+            debug_assert_ne!(tgt, L::root(), "Root node is not a valid target!");
             //println!("===Inserting target {tgt:?}===");
 
             loop {
@@ -358,6 +363,7 @@ where
                     break;
                 }
             };
+            debug_assert_ne!(tgt, L::root(), "Root node is not a valid target!");
             // walk up the tree until we are high enough to work on next target
             //dbg!(&self.processing_queue);
             while !addr.pos.contains_child_node(tgt) {
@@ -367,7 +373,7 @@ where
             }
         }
     }
-
+    #[inline]
     pub fn pop_chunk_by_position(&mut self, pos: L) -> Option<C> {
         let (child, node) = self.follow_nodes_to_position_mut(pos).ok()?;
         let chunk_idx = node.chunk[child].take()?;
@@ -376,6 +382,7 @@ where
     }
 
     // Common part of various insert operations
+    #[inline]
     fn insert_inner<V>(
         &mut self,
         addr: TreePos<N, L>,
@@ -446,6 +453,7 @@ where
         V: FnMut(L) -> C,
     {
         debug_assert!(self.nodes.len() > 0);
+        debug_assert_ne!(tgt, L::root(), "Root node is not a valid target!");
 
         // start at the root node
         let mut addr = TreePos {
@@ -464,10 +472,12 @@ where
         }
     }
 
+    #[inline]
     pub fn iter_chunks_mut(&mut self) -> slab::IterMut<ChunkContainer<N, C, L>> {
         self.chunks.iter_mut()
     }
 
+    #[inline]
     pub fn iter_chunks(&mut self) -> slab::Iter<ChunkContainer<N, C, L>> {
         self.chunks.iter()
     }
@@ -484,6 +494,7 @@ where
     /// Defragments the chunks array to enable fast iteration.
     /// This will have zero cost if array does not need defragmentation.
     /// The next update might take longer due to memory allocations.
+    #[inline]
     pub fn defragment_chunks(&mut self) {
         let nodes = &mut self.nodes;
         self.chunks.compact(|chunk, cur, new| {
@@ -666,11 +677,12 @@ where
 }
 
 /// Construct an itreator that traverses a subtree in nodes that begins in start (including start itself).
+#[inline]
 pub fn traverse<'a, const B: usize>(
     nodes: &'a Slab<TreeNode<B>>,
     start: &'a TreeNode<B>,
 ) -> TraverseIter<'a, B> {
-    //todo use better logic here!
+    //TODO use better logic here (DFS)!
     let mut to_visit = Vec::with_capacity(8*B);//arrayvec::ArrayVec::new();
     to_visit.push(start);
     TraverseIter { nodes, to_visit }

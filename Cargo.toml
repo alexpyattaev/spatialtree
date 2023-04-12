@@ -4,8 +4,8 @@ description = "A fast and flexible generic spatial tree collection (Octree, Quad
 version = "0.1.0"
 edition = "2021"
 license = "LGPL-3.0"
-repository = "https://github.com/Dimev/lodtree"
-documentation = "https://docs.rs/lodtree"
+repository = "https://github.com/alexpyattaev/spatialtree"
+documentation = "https://docs.rs/spatialtree"
 keywords = ["lod", "terrain", "octree", "quadtree", "tree"]
 categories = ["data-structures"]
 
@@ -15,11 +15,11 @@ arrayvec = "0.7.2"
 duplicate = "1.0.0"
 freelist = "0.1.0"
 itertools = "0.10.5"
-num = "0.4.0"
 slab = "0.4.8"
 soa_derive = "0.12.0"
 static_assertions = "1.1.0"
 rand ={version="0.8.5", features=['small_rng'], optional = true }
+num-traits = "0.2.15"
 
 [features]
 default = ["rand"]
@@ -48,9 +48,17 @@ harness = false
 [profile.release]
 opt-level=3
 overflow-checks = false
+#debug=1
 debug=0
 strip = "symbols"
 debug-assertions=false
 lto="fat"
 #panic="abort"
-codegen-units=16
+#codegen-units=1
+
+[profile.bench]
+#debug = 1
+debug=0
+lto="fat"
+strip = "symbols"
+

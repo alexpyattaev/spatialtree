@@ -17,8 +17,11 @@ pub struct CoordsInBoundsIter<const N: usize, L: LodVec<N>> {
     bound_max: L,
 }
 
-fn stack_size<const N: usize, L: LodVec<N>>(cv: L) -> usize {
-    (cv.depth() as usize * L::MAX_CHILDREN) - (cv.depth() as usize - 1)
+impl <const N: usize, L: LodVec<N>> CoordsInBoundsIter<N, L>{
+    #[inline]
+    pub fn stack_size (cv: L) -> usize {
+        (cv.depth() as usize * L::MAX_CHILDREN) - (cv.depth() as usize - 1)
+    }
 }
 
 impl<const N: usize, L: LodVec<N>> Iterator for CoordsInBoundsIter<N, L> {
@@ -59,7 +62,7 @@ C:Sized,
     /// the tree reference
     tree: reference([a],[Tree<N, B, C, L>]),
 
-    /// internal stack for which chunks are next
+    /// internal stack for tree traverse
     to_visit: Vec<TreePos<N, L>>,
 
     /// index of child to return
@@ -74,6 +77,14 @@ C:Sized,
     bound_max: L,
 }
 
+impl  <'a, const N:usize, const B:usize, C, L>  StructName<'a,N,B, C, L> where
+L:LodVec<N>,
+C:Sized,{
+    #[inline]
+    pub fn stack_size(cv:L)-> usize {
+        (cv.depth().saturating_sub(1) as usize ) *( L::MAX_CHILDREN - 1) + 1
+    }
+}
 
 impl  <'a, const N:usize, const B:usize, C, L> Iterator for StructName<'a,N,B, C, L> where
 L:LodVec<N>,
@@ -104,7 +115,13 @@ C:Sized,
                     // if child is present at given location add it to the visit list
                     //dbg!(cur_node.children);
                     if let Some(child_idx) = cur_node.children[i] {
+                        // make sure this push never allocates
+                        debug_assert!(self.to_visit.capacity() >0);
                         self.to_visit.push(TreePos{pos:child_position, idx: child_idx.get() as usize});
+                        #[cfg(test)]
+                        unsafe{
+                            MAX_STACK = MAX_STACK.max(self.to_visit.len());
+                        }
                     }
                     if let Some(chunk_idx) = cur_node.chunk[i].get() {
                         //println!("Return chunk {}",chunk_idx);
@@ -131,6 +148,7 @@ where
     C: Sized,
 {
     ///Access reference to a chunk in tree while correctly setting lifetime
+    #[inline]
     fn chunk_ref(&self, ci: usize) -> (L, &'a C) {
         let cr = &self.tree.chunks[ci];
         (cr.position, &cr.chunk)
@@ -142,6 +160,7 @@ where
     C: Sized,
 {
     ///Get raw pointer to a chunk in tree
+    #[inline]
     fn chunk_ref_mut(&mut self, ci: usize) -> (L, *mut C) {
         let cr = &mut self.tree.chunks[ci];
         // SAFETY: we attach the lifetime of the iterator to this when returning so
@@ -151,7 +170,7 @@ where
 }
 
 /// Iterate over all positions inside a certain AABB.
-/// Important - this returns also intermediate depths!
+/// Important - this returns also intermediate depths, but does not return root node.
 #[inline]
 pub fn iter_all_positions_in_bounds<const N: usize, L: LodVec<N>>(
     bound_min: L,
@@ -161,15 +180,22 @@ pub fn iter_all_positions_in_bounds<const N: usize, L: LodVec<N>>(
         bound_min < bound_max,
         "Bounds must select a non-empty region"
     );
-    let mut stack = Vec::with_capacity(stack_size(bound_min));
+
+    let mut stack = Vec::with_capacity(CoordsInBoundsIter::<N, L>::stack_size(bound_min));
     stack.push(L::root());
-    CoordsInBoundsIter {
+    let mut ite = CoordsInBoundsIter {
         stack,
         max_depth: bound_min.depth(),
         bound_min,
         bound_max,
-    }
+    };
+    //discard root node as we never want it.
+    ite.next();
+    ite
 }
+
+#[cfg(test)]
+static mut MAX_STACK:usize= 0;
 
 impl<'a, const N: usize, const B: usize, C, L> Tree<N, B, C, L>
 where
@@ -185,12 +211,20 @@ where
         bound_max: L,
     ) -> ChunksInBoundIter<N, B, C, L> {
         debug_assert_eq!(bound_min.depth(), bound_max.depth());
-        // TODO: better estimate for needed capacity here? Smallvec?
-        let mut to_visit = Vec::with_capacity(16);
+
+        // TODO: Smallvec?
+        let mut to_visit = Vec::with_capacity(ChunksInBoundIter::<N, B, C, L>::stack_size(bound_min));
+
         to_visit.push(TreePos {
             idx: 0,
             pos: L::root(),
         });
+
+        #[cfg(test)]
+        unsafe {
+            MAX_STACK = 1;
+        }
+
         ChunksInBoundIter {
             to_visit,
             to_return: arrayvec::ArrayVec::new(),
@@ -209,11 +243,15 @@ where
         bound_max: L,
     ) -> ChunksInBoundIterMut<N, B, C, L> {
         debug_assert_eq!(bound_min.depth(), bound_max.depth());
-        let mut to_visit = Vec::with_capacity(16);
+        let mut to_visit = Vec::with_capacity(ChunksInBoundIterMut::<N, B, C, L>::stack_size(bound_min));
         to_visit.push(TreePos {
             idx: 0,
             pos: L::root(),
         });
+        #[cfg(test)]
+        unsafe {
+            MAX_STACK = 1;
+        }
         ChunksInBoundIterMut {
             to_visit,
             to_return: arrayvec::ArrayVec::new(),
@@ -300,7 +338,51 @@ mod tests {
             assert_eq!(count, get_chunk_count_at_max_depth(min, max));
         }
     }
+    #[test]
+    fn aabb_iterator_stack_size() {
+        println!("Testing OctTree");
+        for _ in 0..50{
+        for d in 1..6{
+            println!("Depth {d}");
+            let mut tree = OctTree::<Chunk, OctVec>::new();
+            let cmax = (1u8<<d) -1;
+            let min =  OctVec::new([0u8, 0, 0], d);
+            let max = OctVec::new([cmax, cmax, cmax], d);
+            let pos_iter = iter_all_positions_in_bounds(min,max);//.filter(|p| p.depth !=0);
 
+            tree.insert_many(pos_iter, |_|Chunk{visible:false});
+            for (_l, _c) in tree.iter_chunks_in_aabb(min, max) {
+
+            }
+
+            let expected_maxstack = ChunksInBoundIter::<3, 8, Chunk, OctVec>::stack_size(min);
+            unsafe {
+                assert_eq!(MAX_STACK, expected_maxstack);
+                MAX_STACK = 0;
+            }
+        }
+
+        println!("Testing QuadTree");
+        for d in 1..10{
+            println!("Depth {d}");
+            let mut tree = QuadTree::<Chunk, QuadVec<u16>>::new();
+            let cmax = (1u16<<d) -1;
+            let min =  QuadVec::new([0u16, 0], d);
+            let max = QuadVec::new([cmax, cmax], d);
+            let pos_iter = iter_all_positions_in_bounds(min,max);//.filter(|p| p.depth !=0);
+
+            tree.insert_many(pos_iter, |_|Chunk{visible:false});
+            for (_l, _c) in tree.iter_chunks_in_aabb(min, max){
+
+            }
+            let expected_maxstack = ChunksInBoundIterMut::<2,4,Chunk, QuadVec<u16>>::stack_size(min);
+            unsafe {
+                assert_eq!(MAX_STACK, expected_maxstack);
+                MAX_STACK = 0;
+            }
+        }
+        }
+    }
     #[test]
     fn iterate_over_chunks_in_aabb() {
         const D: u8 = 4;
