@@ -1,3 +1,20 @@
+/* Generic tree structures for storage of spatial data.
+ * Copyright (C) 2023  Alexander Pyattaev
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
 //! Contains the tree struct, which is used to hold all chunks
 
 use crate::coords::*;
@@ -137,7 +154,7 @@ pub struct TreePos<const N: usize, L: LodVec<N>> {
 }
 
 /// Tree holding the actual data permanently in memory.
-/// This is "too generic", and one should use provided OctTree and QuadTree types when possible.
+/// This is arguably "too generic", and one should use provided OctTree and QuadTree types when possible.
 ///
 /// Internals are partially based on:
 ///  * https://stackoverflow.com/questions/41946007/efficient-and-well-explained-implementation-of-a-quadtree-for-2d-collision-det
@@ -156,7 +173,12 @@ pub struct Tree<const N: usize, const B: usize, C: Sized, L: LodVec<N>> {
     pub(crate) nodes: Slab<TreeNode<B>>,
     /// Temporary buffer for nodes used during rebuilds
     new_nodes: Slab<TreeNode<B>>,
+}
 
+
+pub enum Entry<'a, C:Sized> {
+    Occupied(&'a mut C),
+    Vacant(&'a mut C),
 }
 
 impl<const N: usize, const B: usize, C, L> Tree<N, B, C, L>
@@ -164,7 +186,7 @@ where
     C: Sized,
     L: LodVec<N>,
 {
-    //TODO: use duplicate! on this
+
     /// create a tree with preallocated memory for chunks and nodes
     /// NOTE this function does runtime asserts to make sure Tree is templated correctly.
     /// this runtime check will become compiletime check once generic_const_exprs matures.
@@ -186,6 +208,7 @@ where
             new_nodes:Slab::new(),
         }
     }
+    //TODO: use duplicate! on this
 
     /// Gets the node "controlling" the desired position. This means node that is one depth level above target.
     /// Returns the index of child entry and mutable reference to the node.
@@ -309,6 +332,23 @@ where
         Some(&mut self.chunks[chunk_index].chunk)
     }
 
+    /// get an Entry handle to modify existing or insert a new chunk.
+    /// this is WIP
+    #[inline]
+    pub fn entry<V>(&mut self, _position: L, mut _chunk_creator: V) -> Entry<C>
+    where V: FnMut(L) -> C
+    {
+        todo!()
+        /*match self.follow_nodes_to_position(position){
+            Ok((idx, node))=>{(idx, node)}
+            Err((idx, node))=>{todo!()}
+        }
+
+        let chunk_index = node.chunk[idx].get()?;
+        // and return the chunk
+        Some(&mut self.chunks[chunk_index].chunk)*/
+    }
+
     /// get the position of a chunk, if it exists
     #[inline]
     pub fn get_chunk_position(&self, index: usize) -> Option<L> {
@@ -373,6 +413,8 @@ where
             }
         }
     }
+
+    /// Removes chunk at specified position, and returns its content (if any)
     #[inline]
     pub fn pop_chunk_by_position(&mut self, pos: L) -> Option<C> {
         let (child, node) = self.follow_nodes_to_position_mut(pos).ok()?;

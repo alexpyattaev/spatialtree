@@ -1,132 +1,58 @@
-[![Documentation](https://docs.rs/lodtree/badge.svg)](https://docs.rs/lodtree)
+[![Documentation](https://docs.rs/spatialtree/badge.svg)](https://docs.rs/spatialtree)
 
-# LodTree
-LodTree, a fast generic tree data structure that supports complex spatial queries at various level of detail.
+# Spatial trees
+Spatial trees, (aka QuadTrees, OctTrees, LodTrees) are a family of fast tree data structures that supports complex spatial queries at various level of detail. They are particularly well suited for sparse data storage and neighbor queries.
+
 
 ## Goals
-The aim of this crate is to provide a generic, easy to use tree data structure that can be used to make Quadtrees, Octrees for various realtime applications.
+The aim of this crate is to provide a generic, easy to use tree data structure that can be used to make Quadtrees, Octrees for various realtime applications (e.g. games or GIS software).
 
-Internally, the tree tries to keep all needed memory allocated in arenas to avoid the memory fragmentation, and stores the actual data chunks seperate from the tree nodes for vector processing.
+Internally, the tree tries to keep all needed memory allocated in slab arenas to avoid the memory fragmentation and allocator pressure. All operations, where possible, use either stack allocations or allocate at most once.
  
 ## Accepted design compromises
 
  - Data chunks that are nearby in space do not necessarily land in nearby locations in the tree's memory.
- - There is no way to reclaim allocated memory short of rebuilding the tree from scratch.
+ - There is no way to defragment node storage memory short of rebuilding the tree from scratch (which means doubling memory usage)
 
 
 ## Features
- - Provides sets of chunks that need some action performed on them
- - Tries to avoid memory (re)allocations and moves
- - Stores data chunks in a contiguous array
- - Stores tree nodes in a contiguous array
- - External chunk cache can be used to allow reusing chunks at a memory tradeoff
+ - Highly tunable for different scales (from 8 bit to 64 bit coordinates), 2D, 3D, N-D if desired.
+ - Minimized memory (re)allocations and moves
  - Provides nice iterators for finding chunks in certain bounds
+ - Supports online defragmentation for data chunks to optimize sequential lookups
+ - External chunk cache can be used to allow reusing chunks at a memory tradeoff
+
 
 ### Examples:
- - [rayon](examples/rayon.rs): shows how to use the tree with rayon to generate new chunks in parallel.
+ - [rayon](examples/rayon.rs): shows how to use the tree with rayon to generate new chunks in parallel, and cache chunks already made.
  - [glium](examples/glium.rs): shows how a basic drawing setup would work, with glium to do the drawing.
 
 ## Usage:
 Import the crate
 ```rust
-use lodtree::*;
-use lodtree::coords::OctVec; // or Quadvec if you're making an octree
+use spatialtree::*;
 ```
 
 The tree is it's own struct, and accepts a chunk (anything that implements Sized) and the lod vector (Anything that implements the LodVec trait).
 ```rust
-let mut tree = Tree::<Chunk, OctVec>::new();
+let mut tree = OctTree::<Chunk, OctVec>::new();
 ```
 
-If you want to update chunks due to the camera being moved, you can check if it's needed with prepare_update.
-It takes in 3 parameters.
-
-Targets: where to generate the most detail around.
-
-The given LodVec implementations (OctVec and QuadVec) take in 4 and 3 arguments respectively.
-The first 3/2 are the position in the tree, which is dependant on the lod level.
-and the last parameter is the lod level. No lods smaller than this will be generated for this target.
-
-Detail: The amount of detail for the targets
-The default implementation defines this as the amount of chunks at the target lod level surrounding the target chunk.
-
-Chunk creator:
-Internally a buffer for new chunks is filled, and this function is called to create the new chunk.
-It takes in the LodVec of the position of the chunk.
-```rust
-let needs_updating = tree.prepare_update(
-	&[OctVec(8, 8, 8, 8)], // the target positions to generate the lod around
-	4, // amount of detail
-	|pos| Chunk {} // and the function to construct the chunk with
-);
-```
-
-Now, the tree is ready for an update, so now we'll want to do something with that.
-First, we want to process all chunks that are going to be added.
-This is the only thing the API exposes as a slice, so we can nicely iterate over that in parallel with rayon.
-```rust
-tree.get_chunks_to_add_slice_mut()
-	.iter_mut() // or par_iter_mut if you're using rayon
-	.for_each(|(position, chunk)| {
-
-		// and run expensive init, probably does something with procedural generation
-		chunk.expensive_init(*position);
-	});
-```
-
-Next, we'll also want to change the visibility of some chunks so they don't overlap with higher detail lods.
-```rust
-// and make all chunks visible or not
-for i in 0..tree.get_num_chunks_to_activate() {
-	tree.get_chunk_to_activate_mut(i).set_visible(true);
-}
-
-for i in 0..tree.get_num_chunks_to_deactivate() {
-	tree.get_chunk_to_deactivate_mut(i).set_visible(false);
-}
-```
-We'll probably also want to do some cleanup with chunks that are removed.
-```rust
-for i in 0..tree.get_num_chunks_to_remove() {
-	tree.get_chunk_to_remove_mut(i).cleanup();
-} 
-```
-And finally, actually update the tree with the new chunks.
-Note that it's likely needed to do the prepare_update and do_update cycle a number of times before no new chunks need to be added, as the tree only adds one lod level at a time.
-```rust
-tree.do_update();
-```
-But we're not done yet!
-After this step there's a number of chunks that are removed from the cache, and will not be added back into the tree
-We'll want to clean those up now
-```rust
-for (position, chunk) in tree.get_chunks_to_delete_slice_mut().iter_mut() {
-	chunk.true_cleanup();
-}
-
-// and finally, complete the entire update
-tree.complete_update();
-```
 
 ## Roadmap
-### 0.1.0:
- - proper node structure
- - external caching
+### 0.2.0:
  - swap L and C, so the key (position) is before the chunk, which is consistent with other key-value datatypes in rust
- - remove useless features from original datastructure
  - more benchmarks
+### 0.3.0:
+ - use generic const expressions to improve API
 
 ## License
-Licensed under either of
+Licensed under either
+ * GPL, Version 3.0
+   ([LICENSE.txt](LICENSE.txt) )
+ * Proprietary license for commercial use (contact author to arrange licensing)
 
- * Apache License, Version 2.0
-   ([LICENSE-APACHE](LICENSE-APACHE) or http://www.apache.org/licenses/LICENSE-2.0)
- * MIT license
-   ([LICENSE-MIT](LICENSE-MIT) or http://opensource.org/licenses/MIT)
-
-at your option.
 
 ## Contribution
 Unless you explicitly state otherwise, any contribution intentionally submitted
-for inclusion in the work by you, as defined in the Apache-2.0 license, shall be
-dual licensed as above, without any additional terms or conditions.
+for inclusion in the work by you, shall be licensed as above, without any additional terms or conditions.

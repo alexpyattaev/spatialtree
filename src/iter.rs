@@ -1,4 +1,21 @@
-//! Iterators over chunks
+/* Generic tree structures for storage of spatial data.
+ Copyright (C) 2023  Alexander Pyattaev
+
+ This program is free software: you can redistribute it and/or modify
+ it under the terms of the GNU General Public License as published by
+ the Free Software Foundation, either version 3 of the License, or
+ (at your option) any later version.
+
+ This program is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ GNU General Public License for more details.
+
+ You should have received a copy of the GNU General Public License
+ along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+//! Iterators over tree data and over coordinates
 use crate::coords::*;
 use crate::tree::*;
 
@@ -18,6 +35,8 @@ pub struct CoordsInBoundsIter<const N: usize, L: LodVec<N>> {
 }
 
 impl <const N: usize, L: LodVec<N>> CoordsInBoundsIter<N, L>{
+
+    /// Returns the amount of heap allocation to run this iterator.
     #[inline]
     pub fn stack_size (cv: L) -> usize {
         (cv.depth() as usize * L::MAX_CHILDREN) - (cv.depth() as usize - 1)
@@ -80,6 +99,7 @@ C:Sized,
 impl  <'a, const N:usize, const B:usize, C, L>  StructName<'a,N,B, C, L> where
 L:LodVec<N>,
 C:Sized,{
+
     #[inline]
     pub fn stack_size(cv:L)-> usize {
         (cv.depth().saturating_sub(1) as usize ) *( L::MAX_CHILDREN - 1) + 1
@@ -170,7 +190,7 @@ where
 }
 
 /// Iterate over all positions inside a certain AABB.
-/// Important - this returns also intermediate depths, but does not return root node.
+/// Important - this returns all intermediate depths, but does not return root node.
 #[inline]
 pub fn iter_all_positions_in_bounds<const N: usize, L: LodVec<N>>(
     bound_min: L,

@@ -1,11 +1,10 @@
 Each node has array of children, which are indices into the array of nodes.
 Chlidren array can contain zeros, which indicate absence of appropriate child.
-
-Chunks array points towards chunks associated with a given child. The root node (nodes[0])
-always gets a chunk assigned when it is first created (as zero would be a valid index for nodes otherwise).
 There is no way to delete the root node.
 
-For all other nodes chunks are optional.
+Chunks array points towards chunks associated with a given child. The root node (nodes[0])
+never gets a chunk assigned to itself (as it would require special cases in every lookup function).
+For all nodes chunks are optional, and may be added and removed at will.
 
 Benefits of this layout:
     * nodes are automatically grouped, so less operations on nodes array are needed to traverse the same depth of tree.

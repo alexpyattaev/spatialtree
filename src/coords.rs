@@ -1,14 +1,32 @@
+/* Generic tree structures for storage of spatial data.
+ Copyright (C) 2023  Alexander Pyattaev
+
+ This program is free software: you can redistribute it and/or modify
+ it under the terms of the GNU General Public License as published by
+ the Free Software Foundation, either version 3 of the License, or
+ (at your option) any later version.
+
+ This program is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ GNU General Public License for more details.
+
+ You should have received a copy of the GNU General Public License
+ along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
 //! Contains coordinate structs, QuadVec for quadtrees, and OctVec for octrees, as well as their LodVec implementation
 
 use std::cmp::Ordering;
 
 pub const MAX_DEPTH:u8 = 60;
 
+/// External interface into coordinates used by the Tree implementations.
 pub trait LodVec<const N: usize>:
     std::hash::Hash + Eq + Sized + Copy + Clone + Send + Sync + std::fmt::Debug + PartialOrd
 {
     const MAX_CHILDREN: usize = 1 << N;
-    //const GGG:usize = N.l
+
     /// gets one of the child node position of this node, defined by it's index.
     fn get_child(self, index: usize) -> Self;
 
@@ -34,30 +52,23 @@ pub trait LodVec<const N: usize>:
     /// check if this chunk is inside of a bounding box
     /// where min is the lowest corner of the box, and max is the highest corner
     /// max_depth controls the depth at which the BB checking is done.
-    /// ```
     fn is_inside_bounds(self, min: Self, max: Self, max_depth: u8) -> bool;
 
     /// Retrieve current depth
     fn depth(self) -> u8;
 }
 
-
+/// Trait for data types suitable for use in CoordVec.
+/// Implemented for builtin unsigned integers, implement for other types
+/// at your own risk!
 pub trait ReasonableIntegerLike:
-    Default
+    Default+ Copy
     + core::cmp::Eq
     + core::cmp::Ord
-    //+ num_traits::NumAssignRef + num_traits::NumOps + num_traits::NumAssignOps + num_traits::NumAssign
-    //+ num_traits::NumRef
     + std::marker::Send
     + std::marker::Sync
     + std::fmt::Debug
-    + Copy
     + std::hash::Hash
-    // + std::ops::Shl<isize, Output = Self>
-    // + std::ops::Shr<isize, Output = Self>
-    // + std::ops::Shl<usize, Output = Self>
-    // + std::ops::Shr<usize, Output = Self>
-    // + std::ops::BitAnd<Self, Output = Self>
 {
     fn fromusize(value: usize) -> Self;
     fn tousize(self) -> usize;
@@ -84,62 +95,7 @@ reasonable_int_impl!(u16);
 reasonable_int_impl!(u32);
 reasonable_int_impl!(u64);
 
-#[cfg(test)]
-mod tests {
-    use crate::coords::*;
-    use std::mem::size_of;
-
-    #[test]
-    fn sizes() {
-        assert_eq!(3, size_of::<QuadVec>());
-        assert_eq!(4, size_of::<OctVec>());
-    }
-    #[test]
-    fn find_child_idx() {
-        // create root
-        let z = OctVec::<u8>::root();
-        // loop over possible children
-        for i in 0..OctVec::<u8>::MAX_CHILDREN {
-            // get child of z with index i
-            let c = z.get_child(i);
-            // recover its index based on coords
-            let ci = z.get_child_index(c);
-            // make sure they are identical
-            assert_eq!(ci, i);
-
-            for j in 0..OctVec::<u8>::MAX_CHILDREN {
-                // get child of c
-                let cc = c.get_child(j);
-                // and its index
-                let cci = c.get_child_index(cc);
-                println!("{}->{} ({}->{}): {:?}->{:?} ", i, j, ci, cci, c, cc);
-                assert_eq!(cci, j);
-                // we can also get index w.r.t. previous levels
-                let czi = z.get_child_index(cc);
-                assert_eq!(czi, i);
-                // and we can go deeper too...
-                for k in 0..OctVec::<u8>::MAX_CHILDREN {
-                    let ccc = cc.get_child(k);
-                    assert_eq!(z.get_child_index(ccc), i);
-                    assert_eq!(c.get_child_index(ccc), j);
-                    assert_eq!(cc.get_child_index(ccc), k);
-                }
-            }
-        }
-    }
-
-    #[test]
-    fn can_subdivide() {
-        let z: QuadVec = QuadVec::root();
-        let c1 = z.get_child(0);
-        let c12 = c1.get_child(0);
-        let tgt = QuadVec::build(0, 0, 2);
-
-        println!("{tgt:?}, {c12:?}, {}", tgt.can_subdivide(c12, 3));
-        println!("{tgt:?}, {c1:?}, {}", tgt.can_subdivide(c1, 3));
-    }
-}
-
+/// "Default" data structure for use as coordinate vector in a tree.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, std::hash::Hash)]
 pub struct CoordVec<const N: usize, DT = u8>
 where
@@ -426,4 +382,61 @@ where
         zz[i] = rng.gen_range(min.pos[i]..max.pos[i]);
     }
     CoordVec::new(zz, min.depth)
+}
+
+
+#[cfg(test)]
+mod tests {
+    use crate::coords::*;
+    use std::mem::size_of;
+
+    #[test]
+    fn sizes() {
+        assert_eq!(3, size_of::<QuadVec>());
+        assert_eq!(4, size_of::<OctVec>());
+    }
+    #[test]
+    fn find_child_idx() {
+        // create root
+        let z = OctVec::<u8>::root();
+        // loop over possible children
+        for i in 0..OctVec::<u8>::MAX_CHILDREN {
+            // get child of z with index i
+            let c = z.get_child(i);
+            // recover its index based on coords
+            let ci = z.get_child_index(c);
+            // make sure they are identical
+            assert_eq!(ci, i);
+
+            for j in 0..OctVec::<u8>::MAX_CHILDREN {
+                // get child of c
+                let cc = c.get_child(j);
+                // and its index
+                let cci = c.get_child_index(cc);
+                println!("{}->{} ({}->{}): {:?}->{:?} ", i, j, ci, cci, c, cc);
+                assert_eq!(cci, j);
+                // we can also get index w.r.t. previous levels
+                let czi = z.get_child_index(cc);
+                assert_eq!(czi, i);
+                // and we can go deeper too...
+                for k in 0..OctVec::<u8>::MAX_CHILDREN {
+                    let ccc = cc.get_child(k);
+                    assert_eq!(z.get_child_index(ccc), i);
+                    assert_eq!(c.get_child_index(ccc), j);
+                    assert_eq!(cc.get_child_index(ccc), k);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn can_subdivide() {
+        let z: QuadVec = QuadVec::root();
+        let c1 = z.get_child(0);
+        let c12 = c1.get_child(0);
+        let tgt = QuadVec::build(0, 0, 2);
+
+        println!("{tgt:?}, {c12:?}, {}", tgt.can_subdivide(c12, 3));
+        println!("{tgt:?}, {c1:?}, {}", tgt.can_subdivide(c1, 3));
+    }
 }

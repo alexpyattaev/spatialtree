@@ -3,10 +3,10 @@ name = "spatialtree"
 description = "A fast and flexible generic spatial tree collection (Octree, Quadtree, etc)"
 version = "0.1.0"
 edition = "2021"
-license = "LGPL-3.0"
+license = "GPL-3.0"
 repository = "https://github.com/alexpyattaev/spatialtree"
 documentation = "https://docs.rs/spatialtree"
-keywords = ["lod", "terrain", "octree", "quadtree", "tree"]
+keywords = ["octree", "quadtree", "tree","lod", "generic"]
 categories = ["data-structures"]
 
 
