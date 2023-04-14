@@ -89,8 +89,8 @@ impl ChunkPtr {
 //TODO - use struct of arrays?
 /// Tree node that encompasses multiple children at once. This just barely fits into one cache line for octree.
 /// For each possible child, the node has two relative pointers:
-///  - children[i] will point to the TreeNode in a given branch direction
-///  - chunk[i] will point to the data chunk.
+///  * children will point to the TreeNode in a given branch direction
+///  * chunk will point to the data chunk in a given branch direction
 /// both pointers may be "None", indicating either no children, or no data
 #[derive(Clone, Debug)]
 pub struct TreeNode<const B: usize> {
@@ -170,9 +170,6 @@ pub(crate) type NodeStorage<const B: usize> = Slab<TreeNode<B>>;
 /// Tree holding the actual data permanently in memory.
 /// This is arguably "too generic", and one should use provided OctTree and QuadTree types when possible.
 ///
-/// Internals are partially based on:
-///  * https://stackoverflow.com/questions/41946007/efficient-and-well-explained-implementation-of-a-quadtree-for-2d-collision-det
-///  * https://github.com/Dimev/lodtree
 ///
 /// Template parameters are:
 /// * N is the number bits needed to encode B, i.e. 3 for octrees and 4 for quadtrees.

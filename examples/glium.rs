@@ -155,7 +155,7 @@ fn draw(mouse_pos: (f32, f32), tree: &mut QuadTree<Chunk, QuadVec>, ctx: &Render
     // make sure there are no holes in chunks array for fast iteration
     tree.defragment_chunks();
     // and select the chunk at the mouse position
-    if let Some(chunk) = tree.get_chunk_from_position_mut(qv) {
+    if let Some(chunk) = tree.get_chunk_by_position_mut(qv) {
         chunk.selected = true;
     }
 
@@ -193,7 +193,7 @@ fn draw(mouse_pos: (f32, f32), tree: &mut QuadTree<Chunk, QuadVec>, ctx: &Render
     target.finish().unwrap();
 
     // deselect the chunk at the mouse position
-    if let Some(chunk) = tree.get_chunk_from_position_mut(qv) {
+    if let Some(chunk) = tree.get_chunk_by_position_mut(qv) {
         chunk.selected = false;
     }
 }

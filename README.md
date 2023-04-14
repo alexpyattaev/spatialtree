@@ -5,8 +5,8 @@ Spatial trees, (aka QuadTrees, OctTrees, LodTrees) are a family of fast tree dat
 
 ## Acknowledgements
 Internals are partially based on:
-  * https://stackoverflow.com/questions/41946007/efficient-and-well-explained-implementation-of-a-quadtree-for-2d-collision-det
-  * https://github.com/Dimev/lodtree
+  * <https://stackoverflow.com/questions/41946007/efficient-and-well-explained-implementation-of-a-quadtree-for-2d-collision-det>
+  * <https://github.com/Dimev/lodtree>
 
 
 ## Goals
@@ -14,11 +14,6 @@ The aim of this crate is to provide a generic, easy to use tree data structure t
 
 Internally, the tree tries to keep all needed memory allocated in slab arenas to avoid the memory fragmentation and allocator pressure. All operations, where possible, use either stack allocations or allocate at most once.
  
-## Accepted design compromises
-
- - Data chunks that are nearby in space do not necessarily land in nearby locations in the tree's memory.
- - There is no way to defragment node storage memory short of rebuilding the tree from scratch (which means doubling memory usage)
-
 
 ## Features
  - Highly tunable for different scales (from 8 bit to 64 bit coordinates), 2D, 3D, N-D if desired.
@@ -27,6 +22,10 @@ Internally, the tree tries to keep all needed memory allocated in slab arenas to
  - Supports online defragmentation for data chunks to optimize sequential operations on all chunks
  - External chunk cache can be used to allow reusing chunks at a memory tradeoff
 
+## Accepted design compromises
+
+ - Data chunks that are nearby in space do not necessarily land in nearby locations in the tree's memory.
+ - There is no way to defragment node storage memory short of rebuilding the tree from scratch (which means doubling memory usage)
 
 ### Examples:
  - [rayon](examples/rayon.rs): shows how to use the tree with rayon to generate new chunks in parallel, and cache chunks already made.
@@ -70,9 +69,7 @@ assert_eq!(ov1, ov2);
 Inserts are most efficient when performed in large batches, as this minimizes tree traverse overhead.
 ```rust
 # use spatialtree::*;
-
 # struct Chunk {}
-
 // create a tree
 let mut tree = QuadTree::<Chunk, QuadVec>::with_capacity(32, 64);
 // create a few targets
@@ -88,10 +85,8 @@ tree.insert_many(targets.iter().copied(), |_| Chunk {});
 Alternatively, if you want to insert data one chunk at a time:
 ```rust
 # use spatialtree::*;
-
 // create a tree with usize as data
 let mut tree = QuadTree::<usize, QuadVec>::with_capacity(32, 64);
-
 // insert/replace a chunk at selected location, provided lambda builds the content
 // we get chunk index back
 let idx = tree.insert(QuadVec::new([1u8,2], 3), |p| {p.pos.iter().sum::<u8>() as usize} );
@@ -122,12 +117,10 @@ to keep chunks fairly small such that moving them between tree and cache is not 
 # use std::collections::HashMap;
 # use std::cell::RefCell;
 # use std::borrow::BorrowMut;
-
 // Tree with "active" data
 let mut tree = QuadTree::<Vec<usize>, QuadVec>::with_capacity(32, 64);
 // Cache for "inactive" data
 let mut cache: RefCell<HashMap::<QuadVec,Vec<usize>>> = RefCell::new(HashMap::new());
-
 # fn expensive_init(c:QuadVec, d:&mut Vec<usize>){ }
 
 //function to populate new chunks. Will read from cache if possible
@@ -149,11 +142,13 @@ let mut  chunk_evict = |c:QuadVec, d:Vec<usize>|{
   cache.borrow_mut().insert(c,d);
 };
 
+// construct vector pointing to location that we want to detail
 let qv = QuadVec::from_float_coords([1.1, 2.4], 6);
-
+// run the actual update rebuilding the tree
 tree.lod_update(&[qv], 2, chunk_creator, chunk_evict);
-
 ```
+Internally, lod_update will rebuild the tree to match needed node structure that reflects locations of all targets.
+Thus, defragment_nodes is never needed after lod_update. You may want to defragment_chunks if you are going to iterate over them.
 
 ### Optimize memory layout
 
