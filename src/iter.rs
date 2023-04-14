@@ -210,14 +210,14 @@ duplicate::duplicate! {
     L:LodVec<N>,
     C:Sized,
     {
-        type Item = (L, reference([a], [C]));
+        type Item = (TreePos<N, L>, reference([a], [C]));
 
         #[inline]
         fn next(&mut self) -> Option<Self::Item> {
             // fetch next position from position iterator
             let pos = self.chunk_idx_iter.next()?;
             // return appropriate reference to the chunk
-            Some((pos.pos, getter([pos])))
+            Some((pos, getter([pos])))
         }
     }
 
@@ -451,7 +451,7 @@ mod tests {
             total_voxels += 1;
             //println!("visit {:?} {:?}", l, c.visible);
             assert_eq!(
-                l.depth, D,
+                l.pos.depth, D,
                 "All chunks must be at max depth (as we did not insert any others)"
             );
         }
@@ -542,7 +542,7 @@ mod tests {
             }
 
             assert_eq!(
-                l.depth, D,
+                l.pos.depth, D,
                 "All chunks must be at max depth (as we did not insert any others)"
             );
         }
@@ -570,7 +570,7 @@ mod tests {
             for (l, c) in tree.iter_chunks_in_aabb_mut(min, max) {
                 assert_eq!(c.visible, false, "no way any voxel is still visible");
                 assert_eq!(
-                    l.depth, D,
+                    l.pos.depth, D,
                     "All chunks must be at max depth (as we did not insert any others)"
                 );
             }
