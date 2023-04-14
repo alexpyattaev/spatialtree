@@ -22,7 +22,6 @@ use glium::{
     VertexBuffer,
 };
 
-use spatialtree::coords::QuadVec;
 use spatialtree::*;
 
 // the chunk struct for the tree

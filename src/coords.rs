@@ -171,7 +171,7 @@ where
     }
     #[inline(always)]
     fn depth(self) -> u8 {
-        return self.depth;
+        self.depth
     }
 
     #[inline(always)]
@@ -258,20 +258,22 @@ where
         // difference in lod level between the target and the node
         let level_difference = self.depth - node.depth;
 
+        // size of bounding box
+        let bb_size = (detail + 1) << level_difference;
+        let offset = 1 << level_difference;
+
         // minimum corner of the bounding box
         let min = node.pos.iter().map(|e| {
             let x = e.tousize();
-            let x = (x << (level_difference + 1))
-                .saturating_sub(((detail + 1) << level_difference) - (1 << level_difference));
-            x
+            (x << (level_difference + 1))
+                .saturating_sub(bb_size - offset)
         });
 
         // maximum corner of the bounding box
         let max = node.pos.iter().map(|e| {
             let x = e.tousize();
-            let x = (x << (level_difference + 1))
-                .saturating_add(((detail + 1) << level_difference) + (1 << level_difference));
-            x
+            (x << (level_difference + 1))
+                .saturating_add(bb_size + offset)
         });
 
         // iterator over bounding boxes
@@ -342,7 +344,7 @@ where
     #[inline]
     fn add(self, rhs: Self) -> Self::Output {
         debug_assert_eq!(self.depth, rhs.depth);
-        let mut res = self.clone();
+        let mut res = self;
         for (e1, e2) in res.pos.iter_mut().zip(rhs.pos) {
             *e1 += e2;
         }
@@ -381,6 +383,7 @@ where
 {
     debug_assert_eq!(min.depth, max.depth);
     let mut zz = [T::fromusize(0); N];
+    #[allow(clippy::needless_range_loop)]
     for i in 0..N {
         zz[i] = rng.gen_range(min.pos[i]..max.pos[i]);
     }

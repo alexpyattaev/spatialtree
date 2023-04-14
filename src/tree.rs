@@ -62,13 +62,13 @@ impl ChunkPtr {
     #[inline]
     pub(crate) fn from(x: Option<usize>) -> Self {
         match x {
-            Some(v) => Self { 0: v as i32 },
+            Some(v) => Self ( v as i32 ),
             None => Self::None,
         }
     }
     // Cheat for "compatibility" with option.
     #[allow(non_upper_case_globals)]
-    const None: Self = ChunkPtr { 0: -1 };
+    const None: Self = ChunkPtr( -1 );
 }
 
 //TODO: impl Try once stable
@@ -111,17 +111,17 @@ impl<const B: usize> TreeNode<B> {
     }
 
     #[inline]
-    pub fn iter_existing_chunks<'a>(
-        &'a self,
-    ) -> impl Iterator<Item = (usize, usize)> + 'a {
+    pub fn iter_existing_chunks(
+        &self,
+    ) -> impl Iterator<Item = (usize, usize)>  +'_ {
         self.chunk.iter().filter_map(|c| c.get()).enumerate()
     }
 }
 
 #[inline]
-pub fn iter_treenode_children<'a, const N: usize>(
-    children: &'a [NodePtr; N],
-) -> impl Iterator<Item = (usize, usize)> + 'a {
+pub fn iter_treenode_children< const N: usize>(
+    children: &[NodePtr; N],
+) -> impl Iterator<Item = (usize, usize)> + '_ {
     children
         .iter()
         .filter_map(|c| Some((*c)?.get() as usize))
@@ -380,7 +380,7 @@ where
         T: Iterator<Item = L>,
         V: FnMut(L) -> C,
     {
-        debug_assert!(self.nodes.len() > 0);
+        debug_assert!(!self.nodes.is_empty());
 
         // Internal queue for batch processing, it will be as long as maximal depth of the tree.
         // Stack allocated since it is only ~200 bytes, and this keeps things cache-friendly.
@@ -505,7 +505,7 @@ where
     where
         V: FnMut(L) -> C,
     {
-        debug_assert!(self.nodes.len() > 0);
+        debug_assert!(!self.nodes.is_empty());
         debug_assert_ne!(tgt, L::root(), "Root node is not a valid target!");
 
         // start at the root node
@@ -579,7 +579,7 @@ where
         // nearby nodes close in memory locations.
         for n in 0..num_nodes {
             // clone children array to keep it safe while we mess with it
-            let children = self.new_nodes[n].children.clone();
+            let children = self.new_nodes[n].children;
             // now go over node's children and move them over
             for (i, old_idx) in iter_treenode_children(&children) {
                 // move the child into new slab
@@ -639,8 +639,8 @@ where
                 Some(p) => p,
                 None => break,
             };
-            // clone children array to keep it safe while we mess with it
-            let children = self.new_nodes[n].children.clone();
+            // copy children array to keep it safe while we mess with it
+            let children = self.new_nodes[n].children;
 
             // now go over node's children
             for (b, maybe_child) in children.iter().enumerate() {
@@ -759,7 +759,7 @@ impl<'a, const B: usize> Iterator for TraverseIter<'a, B> {
         for (_, c) in iter_treenode_children(&current.children) {
             self.to_visit.push(&self.nodes[c]);
         }
-        return Some(current);
+        Some(current)
     }
 }
 

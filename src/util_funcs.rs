@@ -15,6 +15,10 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+/// Utility function to cast random structures into arrays of bytes
+/// This is mostly for debugging purposes
+/// # Safety
+/// This is safe since returned slice is readonly (as long as you do not modify thing it is pointing into)
 pub unsafe fn any_as_u8_slice<T: Sized>(p: &T) -> &[u8] {
     ::core::slice::from_raw_parts((p as *const T) as *const u8, ::core::mem::size_of::<T>())
 }

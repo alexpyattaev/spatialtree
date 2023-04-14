@@ -23,7 +23,7 @@ nodes:Vec<Node>=vec![
 ];
 
 chunks:Vec<ChunkContainer>=vec![
-{node:0, pos:(0,0,0)},// this chunk belongs to root node, if that is present. no way to disable this
+{node:0, pos:(0,0,0)},
 {node:1, pos:(0,3,2)},
 {node:2, pos:(3,1,2)},
     ];
