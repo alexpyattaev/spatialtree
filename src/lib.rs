@@ -15,19 +15,8 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-//#![allow(incomplete_features)]
-//#![feature(generic_const_exprs)]
-//! # LodTree
-//! LodTree, a simple tree data structure for doing chunk-based level of detail.
-//!
-//! # Goals
-//! The aim of this crate is to provide a generic, easy to use tree data structure that can be used to make Lod Quadtrees, Octrees and more.
-//!
-//! Internally, the tree tries to keep as much memory allocated, to avoid the cost of heap allocation, and stores the actual chunks data seperate from the tree data.
-//!  
-//! This does come at a cost, mainly, only the chunks that are going to be added and their locations can be retreived as a slice, although for most (procedural) terrain implementations
-//! making new chunks and editing them will be the highest cost to do, so that shouldn't be the biggest issue.
-//!
+#![doc = include_str!("../README.md")]
+
 //! # Usage:
 //! Import the crate
 //! ```rust
@@ -193,8 +182,6 @@ pub use crate::util_funcs::*;
 pub mod tree;
 pub use crate::tree::*;
 
-pub mod freelist;
-pub use crate::freelist::*;
 
 pub mod iter;
 pub use crate::iter::*;

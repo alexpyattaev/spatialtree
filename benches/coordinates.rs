@@ -29,7 +29,8 @@ fn run_eval<const N: usize, FL: LodVec<N>>(c: &mut Criterion, title: &str) {
     //for depth in [1, 4, 16].iter() {
     for depth in [1].iter() {
         group.significance_level(0.1).sample_size(samples_num);
-        group.bench_with_input(BenchmarkId::from_parameter(depth), depth, |b, &depth| {
+        //TODO: more sensible stuff here
+        group.bench_with_input(BenchmarkId::from_parameter(depth), depth, |b, &_depth| {
             b.iter(|| {
                 let x: FL = FL::root();
                 let c = x.get_child(rng.gen_range(0..FL::MAX_CHILDREN));

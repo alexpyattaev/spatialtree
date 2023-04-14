@@ -3,6 +3,11 @@
 # Spatial trees
 Spatial trees, (aka QuadTrees, OctTrees, LodTrees) are a family of fast tree data structures that supports complex spatial queries at various level of detail. They are particularly well suited for sparse data storage and neighbor queries.
 
+## Acknowledgements
+Internals are partially based on:
+  * https://stackoverflow.com/questions/41946007/efficient-and-well-explained-implementation-of-a-quadtree-for-2d-collision-det
+  * https://github.com/Dimev/lodtree
+
 
 ## Goals
 The aim of this crate is to provide a generic, easy to use tree data structure that can be used to make Quadtrees, Octrees for various realtime applications (e.g. games or GIS software).
@@ -18,8 +23,8 @@ Internally, the tree tries to keep all needed memory allocated in slab arenas to
 ## Features
  - Highly tunable for different scales (from 8 bit to 64 bit coordinates), 2D, 3D, N-D if desired.
  - Minimized memory (re)allocations and moves
- - Provides nice iterators for finding chunks in certain bounds
- - Supports online defragmentation for data chunks to optimize sequential lookups
+ - Provides a selection iterators for finding chunks in certain bounds
+ - Supports online defragmentation for data chunks to optimize sequential operations on all chunks
  - External chunk cache can be used to allow reusing chunks at a memory tradeoff
 
 

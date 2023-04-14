@@ -1,25 +1,25 @@
 /* Generic tree structures for storage of spatial data.
- Copyright (C) 2023  Alexander Pyattaev
+Copyright (C) 2023  Alexander Pyattaev
 
- This program is free software: you can redistribute it and/or modify
- it under the terms of the GNU General Public License as published by
- the Free Software Foundation, either version 3 of the License, or
- (at your option) any later version.
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
 
- This program is distributed in the hope that it will be useful,
- but WITHOUT ANY WARRANTY; without even the implied warranty of
- MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- GNU General Public License for more details.
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
 
- You should have received a copy of the GNU General Public License
- along with this program.  If not, see <https://www.gnu.org/licenses/>.
- */
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <https://www.gnu.org/licenses/>.
+*/
 
 //! Contains coordinate structs, QuadVec for quadtrees, and OctVec for octrees, as well as their LodVec implementation
 
 use std::cmp::Ordering;
 
-pub const MAX_DEPTH:u8 = 60;
+pub const MAX_DEPTH: u8 = 60;
 
 /// External interface into coordinates used by the Tree implementations.
 pub trait LodVec<const N: usize>:
@@ -62,7 +62,8 @@ pub trait LodVec<const N: usize>:
 /// Implemented for builtin unsigned integers, implement for other types
 /// at your own risk!
 pub trait ReasonableIntegerLike:
-    Default+ Copy
+    Default
+    + Copy
     + core::cmp::Eq
     + core::cmp::Ord
     + std::marker::Send
@@ -78,11 +79,11 @@ pub trait ReasonableIntegerLike:
 macro_rules! reasonable_int_impl {
     (  $x:ty  ) => {
         impl ReasonableIntegerLike for $x {
-                #[inline(always)]
+            #[inline(always)]
             fn fromusize(value: usize) -> Self {
                 value as $x
             }
-                #[inline(always)]
+            #[inline(always)]
             fn tousize(self) -> usize {
                 self as usize
             }
@@ -159,7 +160,7 @@ where
 
 impl<const N: usize, DT> LodVec<N> for CoordVec<N, DT>
 where
-    DT: ReasonableIntegerLike
+    DT: ReasonableIntegerLike,
 {
     #[inline(always)]
     fn root() -> Self {
@@ -175,7 +176,6 @@ where
 
     #[inline(always)]
     fn get_child(self, index: usize) -> Self {
-
         debug_assert!(index < <CoordVec<N> as LodVec<N>>::MAX_CHILDREN);
         let mut new = Self::root();
         //println!("GetChild for {:?} idx {}", self,index);
@@ -207,7 +207,7 @@ where
     }
     #[inline]
     fn contains_child_node(self, child: Self) -> bool {
-        if self.depth >= child.depth{
+        if self.depth >= child.depth {
             return false;
         }
         // basically, move the child node up to this level and check if they're equal
@@ -221,7 +221,10 @@ where
     #[inline(always)]
     fn is_inside_bounds(self, min: Self, max: Self, max_depth: u8) -> bool {
         // get the lowest lod level
-        let level = *[self.depth, min.depth, max.depth].iter().min().expect("Starting array not empty") as isize;
+        let level = *[self.depth, min.depth, max.depth]
+            .iter()
+            .min()
+            .expect("Starting array not empty") as isize;
         //dbg!(level);
         // bring all coords to the lowest level
         let self_difference: isize = self.depth as isize - level;
@@ -236,11 +239,12 @@ where
         //println!("lowered {self_lowered:?},  {min_lowered:?}, {max_lowered:?}");
         // then check if we are inside the AABB
         /*self.depth <= max_depth
-            && itertools::izip!(self_lowered, min_lowered, max_lowered)
-                .all(|(slf, min, max)| slf >= min && slf <= max)*/
-        self.depth <= max_depth && self_lowered.zip(min_lowered.zip(max_lowered)).all(
-            |(slf, (min, max))|{slf >= min && slf <= max}
-        )
+        && itertools::izip!(self_lowered, min_lowered, max_lowered)
+            .all(|(slf, min, max)| slf >= min && slf <= max)*/
+        self.depth <= max_depth
+            && self_lowered
+                .zip(min_lowered.zip(max_lowered))
+                .all(|(slf, (min, max))| slf >= min && slf <= max)
     }
 
     #[inline(always)]
@@ -278,9 +282,9 @@ where
         //println!("Check tgt {self:?} wrt {node:?}");
         // check if the target is inside of the bounding box
         local.zip(minmax).all(|(c, (min, max))| {
-          //  println!("{min:?} <= {c:?} < {max:?}");
-            min <= c && c < max}
-        )
+            //  println!("{min:?} <= {c:?} < {max:?}");
+            min <= c && c < max
+        })
     }
 }
 
@@ -293,7 +297,7 @@ where
 {
     #[inline(always)]
     pub fn build(x: DT, y: DT, z: DT, depth: u8) -> Self {
-        Self::new([x, y, z],depth)
+        Self::new([x, y, z], depth)
     }
 }
 
@@ -303,7 +307,7 @@ where
 {
     #[inline(always)]
     pub fn build(x: DT, y: DT, depth: u8) -> Self {
-        Self::new([x, y],depth)
+        Self::new([x, y], depth)
     }
 }
 
@@ -340,7 +344,7 @@ where
         debug_assert_eq!(self.depth, rhs.depth);
         let mut res = self.clone();
         for (e1, e2) in res.pos.iter_mut().zip(rhs.pos) {
-            *e1+= e2;
+            *e1 += e2;
         }
         res
     }
@@ -355,7 +359,6 @@ where
         Self::root()
     }
 }
-
 
 #[inline]
 pub fn get_chunk_count_at_max_depth<const N: usize>(a: CoordVec<N>, b: CoordVec<N>) -> usize {
@@ -383,7 +386,6 @@ where
     }
     CoordVec::new(zz, min.depth)
 }
-
 
 #[cfg(test)]
 mod tests {

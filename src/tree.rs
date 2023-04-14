@@ -34,7 +34,7 @@ pub type NodePtr = Option<NonZeroU32>;
 #[derive(PartialEq, Eq, Clone, Copy, Debug)]
 pub struct ChunkPtr(i32);
 impl core::fmt::Display for ChunkPtr {
-        #[inline]
+    #[inline]
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_fmt(format_args!("ChunkPtr({:?})", self.get()))
     }
@@ -93,20 +93,20 @@ impl ChunkPtr {
 ///  - chunk[i] will point to the data chunk.
 /// both pointers may be "None", indicating either no children, or no data
 #[derive(Clone, Debug)]
-pub struct TreeNode<const N: usize> {
+pub struct TreeNode<const B: usize> {
     /// children, these can't be the root (index 0), so we can use Some and Nonzero for slightly more compact memory
-    pub children: [NodePtr; N],
+    pub children: [NodePtr; B],
 
     /// where the chunks for particular children is stored (if any)
-    pub chunk: [ChunkPtr; N],
+    pub chunk: [ChunkPtr; B],
 }
 
-impl<const N: usize> TreeNode<N> {
-        #[inline]
+impl<const B: usize> TreeNode<B> {
+    #[inline]
     fn new() -> Self {
         Self {
-            children: [NodePtr::None; N],
-            chunk: [ChunkPtr::None; N],
+            children: [NodePtr::None; B],
+            chunk: [ChunkPtr::None; B],
         }
     }
 
@@ -131,10 +131,15 @@ pub fn iter_treenode_children<'a, const N: usize>(
 // utility struct for holding actual chunks and the node that owns them
 #[derive(Clone, Debug)]
 pub struct ChunkContainer<const N: usize, C: Sized, L: LodVec<N>> {
-    pub chunk: C,      // actual data inside the chunk
-    pub position: L,   // where the chunk is (as this can not be easily recovered from node tree)
-    pub node_idx: u32, // index of the node that holds this chunk
-    pub child_idx: u8, // index of the child in the node
+    /// actual data inside the chunk
+    pub chunk: C,
+    /// where the chunk is (as this can not be easily recovered from node tree). Modifying this
+    /// will not move the chunk to a new position, just make you lose sanity.
+    pub position: L,
+    // index of the node that holds this chunk. Do not modify unless you know what you are doing!
+    pub(crate) node_idx: u32,
+    // index of the child in the node. Do not modify unless you know what you are doing!
+    pub(crate) child_idx: u8,
 }
 
 impl<const N: usize, C: Sized, L: LodVec<N>> ChunkContainer<N, C, L> {
@@ -153,6 +158,10 @@ pub struct TreePos<const N: usize, L: LodVec<N>> {
     pub pos: L,     // and it's position
 }
 
+// type aliases to make iterators more readable
+pub(crate) type ChunkStorage<const N: usize, C, L> = Slab<ChunkContainer<N, C, L>>;
+pub(crate) type NodeStorage<const B: usize> = Slab<TreeNode<B>>;
+
 /// Tree holding the actual data permanently in memory.
 /// This is arguably "too generic", and one should use provided OctTree and QuadTree types when possible.
 ///
@@ -168,15 +177,14 @@ pub struct TreePos<const N: usize, L: LodVec<N>> {
 #[derive(Clone, Debug)]
 pub struct Tree<const N: usize, const B: usize, C: Sized, L: LodVec<N>> {
     /// All data chunks in the tree
-    pub(crate) chunks: Slab<ChunkContainer<N, C, L>>,
+    pub(crate) chunks: ChunkStorage<N, C, L>,
     /// All nodes of the Tree
-    pub(crate) nodes: Slab<TreeNode<B>>,
+    pub(crate) nodes: NodeStorage<B>,
     /// Temporary buffer for nodes used during rebuilds
     new_nodes: Slab<TreeNode<B>>,
 }
 
-
-pub enum Entry<'a, C:Sized> {
+pub enum Entry<'a, C: Sized> {
     Occupied(&'a mut C),
     Vacant(&'a mut C),
 }
@@ -186,7 +194,6 @@ where
     C: Sized,
     L: LodVec<N>,
 {
-
     /// create a tree with preallocated memory for chunks and nodes
     /// NOTE this function does runtime asserts to make sure Tree is templated correctly.
     /// this runtime check will become compiletime check once generic_const_exprs matures.
@@ -205,7 +212,7 @@ where
         Self {
             chunks: Slab::with_capacity(chunks_capacity),
             nodes,
-            new_nodes:Slab::new(),
+            new_nodes: Slab::new(),
         }
     }
     //TODO: use duplicate! on this
@@ -300,16 +307,16 @@ where
         self.chunks.len()
     }
 
-    /// get a chunk by index
+    /// get a reference to chunk by index
     #[inline]
-    pub fn get_chunk(&self, index: usize) -> &C {
-        &self.chunks[index].chunk
+    pub fn get_chunk(&self, index: usize) -> &ChunkContainer<N, C, L> {
+        &self.chunks[index]
     }
 
-    /// get a chunk as mutable
+    /// get a mutable reference to chunk container by index
     #[inline]
-    pub fn get_chunk_mut(&mut self, index: usize) -> &mut C {
-        &mut self.chunks[index].chunk
+    pub fn get_chunk_mut(&mut self, index: usize) -> &mut ChunkContainer<N, C, L> {
+        &mut self.chunks[index]
     }
 
     /// get a chunk by position if it's in the tree
@@ -336,7 +343,8 @@ where
     /// this is WIP
     #[inline]
     pub fn entry<V>(&mut self, _position: L, mut _chunk_creator: V) -> Entry<C>
-    where V: FnMut(L) -> C
+    where
+        V: FnMut(L) -> C,
     {
         todo!()
         /*match self.follow_nodes_to_position(position){
@@ -372,7 +380,7 @@ where
 
         // Internal queue for batch processing, it will be as long as maximal depth of the tree.
         // Stack allocated since it is only ~200 bytes, and this keeps things cache-friendly.
-        let mut queue= arrayvec::ArrayVec::< TreePos<N, L>, {MAX_DEPTH as usize}>::new();
+        let mut queue = arrayvec::ArrayVec::<TreePos<N, L>, { MAX_DEPTH as usize }>::new();
 
         // start at the root node
         let mut addr = TreePos {
@@ -407,7 +415,8 @@ where
             // walk up the tree until we are high enough to work on next target
             //dbg!(&self.processing_queue);
             while !addr.pos.contains_child_node(tgt) {
-                addr = queue.pop()
+                addr = queue
+                    .pop()
                     .expect("This should not happen, as we keep root in the stack");
                 //println!("Going up the stack to {addr:?} for target {tgt:?}");
             }
@@ -586,10 +595,8 @@ where
                     }
                 }
             }
-
-
         }
-        std::mem::swap(&mut self.nodes,&mut self.new_nodes);
+        std::mem::swap(&mut self.nodes, &mut self.new_nodes);
         self.new_nodes.clear();
     }
 
@@ -626,9 +633,9 @@ where
         // this will produce a breadth-first traverse of original nodes laid out in new memory, which should keep
         // nearby nodes close in memory locations.
         for n in 0..usize::MAX {
-            let pos = match new_positions.pop_front(){
+            let pos = match new_positions.pop_front() {
                 Some(p) => p,
-                None=>break
+                None => break,
             };
             // clone children array to keep it safe while we mess with it
             let children = self.new_nodes[n].children.clone();
@@ -643,17 +650,17 @@ where
 
                 // if child is subdivided we do not want a chunk there,
                 // and in other case we need one, so we make one if necessary
-                match (self.new_nodes[n].chunk[b].get(),subdivide) {
-                    ( None,true) => {
+                match (self.new_nodes[n].chunk[b].get(), subdivide) {
+                    (None, true) => {
                         //println!("No chunks present");
-                    },
-                    ( Some(chunk_idx),true) => {
+                    }
+                    (Some(chunk_idx), true) => {
                         let cont = self.chunks.remove(chunk_idx);
                         debug_assert_eq!(cont.position, child_pos);
                         evict_callback(child_pos, cont.chunk);
                         self.new_nodes[n].chunk[b] = ChunkPtr::None;
-                    },
-                    (None,false) => {
+                    }
+                    (None, false) => {
                         let chunk_idx = self.chunks.insert(ChunkContainer {
                             chunk: chunk_creator(child_pos),
                             position: child_pos,
@@ -662,11 +669,11 @@ where
                         });
 
                         self.new_nodes[n].chunk[b] = ChunkPtr::from(Some(chunk_idx));
-                    },
-                    (Some(chunk_idx),false) => {
+                    }
+                    (Some(chunk_idx), false) => {
                         //println!("Preserve chunk at index {chunk_idx}");
                         self.chunks[chunk_idx].node_idx = n as u32;
-                    },
+                    }
                 }
 
                 // make sure a child is present if we are going to subdivide
@@ -676,18 +683,22 @@ where
                         let new_idx = self.new_nodes.insert(TreeNode::new());
                         // keep track of positions
                         new_positions.push_back(child_pos);
-                        self.new_nodes[n].children[b] = Some(NonZeroU32::new(new_idx as u32).unwrap());
+                        self.new_nodes[n].children[b] =
+                            Some(NonZeroU32::new(new_idx as u32).unwrap());
                     }
                     // no node present and we do not need one
                     (None, false) => {}
                     //existing node needed, keep it (same logic as in defragment_nodes)
                     (Some(child_idx), true) => {
                         // move the child into new slab
-                        let new_idx = self.new_nodes.insert(self.nodes.remove(child_idx.get() as usize));
+                        let new_idx = self
+                            .new_nodes
+                            .insert(self.nodes.remove(child_idx.get() as usize));
                         // keep track of positions
                         new_positions.push_back(child_pos);
                         // fix our reference to that child
-                        self.new_nodes[n].children[b] = Some(NonZeroU32::new(new_idx as u32).unwrap());
+                        self.new_nodes[n].children[b] =
+                            Some(NonZeroU32::new(new_idx as u32).unwrap());
                     }
                     // existing node not needed, delete its chunks and do not copy over the node itself
                     (Some(child_idx), false) => {
@@ -703,7 +714,7 @@ where
                 };
             }
         }
-        std::mem::swap(&mut self.nodes,&mut self.new_nodes);
+        std::mem::swap(&mut self.nodes, &mut self.new_nodes);
         self.new_nodes.clear();
     }
 
@@ -725,7 +736,7 @@ pub fn traverse<'a, const B: usize>(
     start: &'a TreeNode<B>,
 ) -> TraverseIter<'a, B> {
     //TODO use better logic here (DFS)!
-    let mut to_visit = Vec::with_capacity(8*B);//arrayvec::ArrayVec::new();
+    let mut to_visit = Vec::with_capacity(8 * B); //arrayvec::ArrayVec::new();
     to_visit.push(start);
     TraverseIter { nodes, to_visit }
 }
@@ -743,7 +754,7 @@ impl<'a, const B: usize> Iterator for TraverseIter<'a, B> {
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         let current = self.to_visit.pop()?;
-        for (_,c) in iter_treenode_children(&current.children) {
+        for (_, c) in iter_treenode_children(&current.children) {
             self.to_visit.push(&self.nodes[c]);
         }
         return Some(current);
@@ -817,23 +828,33 @@ mod tests {
         let mut tree = QuadTree::<TestChunk, QuadVec>::new();
         // as long as we need to update, do so
         //let targets = [QuadVec::build(1, 1, 2), QuadVec::build(2, 3, 2)];
-        let targets = [QuadVec::build((1<<2)-1, (1<<2)-1, 2)];
+        let targets = [QuadVec::build((1 << 2) - 1, (1 << 2) - 1, 2)];
         println!("=====> Update with targets {targets:?}");
-        tree.lod_update(&targets, 0, |p| {
-            println!("Creating chunk at {p:?}");
-            TestChunk {}
-        }, |p, _| {
-            println!("Evicting chunk at {p:?}");
-        });
+        tree.lod_update(
+            &targets,
+            0,
+            |p| {
+                println!("Creating chunk at {p:?}");
+                TestChunk {}
+            },
+            |p, _| {
+                println!("Evicting chunk at {p:?}");
+            },
+        );
 
         let targets = [QuadVec::build(0, 0, 2)];
         println!("=====> Update with targets {targets:?}");
-        tree.lod_update(&targets, 0, |p| {
-            println!("Creating chunk at {p:?}");
-            TestChunk {}
-        }, |p, _| {
-            println!("Evicting chunk at {p:?}");
-        });
+        tree.lod_update(
+            &targets,
+            0,
+            |p| {
+                println!("Creating chunk at {p:?}");
+                TestChunk {}
+            },
+            |p, _| {
+                println!("Evicting chunk at {p:?}");
+            },
+        );
     }
     #[test]
     fn insert_into_tree() {

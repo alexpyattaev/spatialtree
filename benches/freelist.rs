@@ -1,9 +1,25 @@
-//#![feature(generic_const_exprs)]
+/* Generic tree structures for storage of spatial data.
+ Copyright (C) 2023  Alexander Pyattaev
+
+ This program is free software: you can redistribute it and/or modify
+ it under the terms of the GNU General Public License as published by
+ the Free Software Foundation, either version 3 of the License, or
+ (at your option) any later version.
+
+ This program is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ GNU General Public License for more details.
+
+ You should have received a copy of the GNU General Public License
+ along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 use freelist as libfreelist;
 use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};
-use spatialtree::freelist::FreeList;
+
 use std::ops::Index;
 
 use slab::Slab;
@@ -47,23 +63,6 @@ impl FlHarness for libfreelist::FreeList<u32> {
     }
     fn get_value(&self, index: usize) -> &u32 {
         self.index(libfreelist::Idx::new(index).unwrap())
-    }
-}
-
-impl<DT: spatialtree::Indexer> FlHarness for FreeList<u32, DT> {
-    fn new() -> Self {
-        FreeList::with_capacity(4)
-    }
-
-    fn add(&mut self, d: u32) -> usize {
-        self.add(d) as usize
-    }
-
-    fn erase(&mut self, idx: usize) {
-        self.remove(idx);
-    }
-    fn get_value(&self, index: usize) -> &u32 {
-        self.index(index)
     }
 }
 
@@ -112,17 +111,10 @@ where
     group.finish();
 }
 
-pub fn freelist_library(c: &mut Criterion) {
+pub fn freelist(c: &mut Criterion) {
     freelist_eval::<libfreelist::FreeList<u32>>(c, "freelist library");
-}
-
-pub fn freelist_inhouse(c: &mut Criterion) {
-    freelist_eval::<FreeList<u32, isize>>(c, "freelist inhouse isize");
-}
-
-pub fn freelist_slab(c: &mut Criterion) {
     freelist_eval::<Slab<u32>>(c, "freelist slab");
 }
 
-criterion_group!(benches, freelist_library, freelist_inhouse, freelist_slab);
+criterion_group!(benches, freelist);
 criterion_main!(benches);
