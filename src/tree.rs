@@ -336,7 +336,7 @@ where
 
     /// get a mutable chunk by position if it's in the tree
     #[inline]
-    pub fn get_chunk_from_position_mut(&mut self, position: L) -> Option<&mut C> {
+    pub fn get_chunk_by_position_mut(&mut self, position: L) -> Option<&mut C> {
         // get the index of the chunk
         let (idx, node) = self.follow_nodes_to_position(position).ok()?;
         let chunk_index = node.chunk[idx].get()?;
