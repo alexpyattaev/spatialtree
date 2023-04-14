@@ -105,7 +105,7 @@ impl<const B: usize> TreeNode<B> {
     #[inline]
     fn new() -> Self {
         Self {
-            children: [NodePtr::None; B],
+            children: [None; B],
             chunk: [ChunkPtr::None; B],
         }
     }
@@ -113,7 +113,7 @@ impl<const B: usize> TreeNode<B> {
     #[inline]
     pub fn iter_existing_chunks<'a>(
         &'a self,
-    ) -> impl core::iter::Iterator<Item = (usize, usize)> + 'a {
+    ) -> impl Iterator<Item = (usize, usize)> + 'a {
         self.chunk.iter().filter_map(|c| c.get()).enumerate()
     }
 }
@@ -121,7 +121,7 @@ impl<const B: usize> TreeNode<B> {
 #[inline]
 pub fn iter_treenode_children<'a, const N: usize>(
     children: &'a [NodePtr; N],
-) -> impl core::iter::Iterator<Item = (usize, usize)> + 'a {
+) -> impl Iterator<Item = (usize, usize)> + 'a {
     children
         .iter()
         .filter_map(|c| Some((*c)?.get() as usize))
@@ -133,9 +133,8 @@ pub fn iter_treenode_children<'a, const N: usize>(
 pub struct ChunkContainer<const N: usize, C: Sized, L: LodVec<N>> {
     /// actual data inside the chunk
     pub chunk: C,
-    /// where the chunk is (as this can not be easily recovered from node tree). Modifying this
-    /// will not move the chunk to a new position, just make you lose sanity.
-    pub position: L,
+    // where the chunk is (as this can not be easily recovered from node tree).
+    pub(crate) position: L,
     // index of the node that holds this chunk. Do not modify unless you know what you are doing!
     pub(crate) node_idx: u32,
     // index of the child in the node. Do not modify unless you know what you are doing!
@@ -145,9 +144,15 @@ pub struct ChunkContainer<const N: usize, C: Sized, L: LodVec<N>> {
 impl<const N: usize, C: Sized, L: LodVec<N>> ChunkContainer<N, C, L> {
     /// get an mutable pointer to chunk which is not tied to the lifetime of the container
     /// this is only needed for iterators.
-    #[inline]
-    pub(crate) fn chunk_ptr(&mut self) -> *mut C {
+    #[inline(always)]
+    pub fn chunk_ptr(&mut self) -> *mut C {
         &mut self.chunk as *mut C
+    }
+    /// where the chunk is. Modifying this
+    /// will not move the chunk to a new position, so this is readonly
+    #[inline(always)]
+    pub fn position(&self) -> L {
+        self.position
     }
 }
 
@@ -220,10 +225,10 @@ where
     /// Gets the node "controlling" the desired position. This means node that is one depth level above target.
     /// Returns the index of child entry and mutable reference to the node.
     /// If exact match is found, returns Ok variant, else Err variant with nearest match (at lower depth).
-    fn follow_nodes_to_position_mut<'a>(
-        &'a mut self,
+    fn follow_nodes_to_position_mut(
+        &mut self,
         position: L,
-    ) -> Result<(usize, &'a mut TreeNode<B>), (usize, &'a mut TreeNode<B>)> {
+    ) -> Result<(usize, &mut TreeNode<B>), (usize, &mut TreeNode<B>)> {
         // start in root
         let mut addr = TreePos {
             idx: 0,
@@ -264,10 +269,10 @@ where
     /// Gets the node "controlling" the desired position. This means node that is one depth level above target.
     /// Returns the index of child entry and mutable reference to the node.
     /// If exact match is found, returns Ok variant, else Err variant with nearest match (at lower depth).
-    fn follow_nodes_to_position<'a>(
-        &'a self,
+    fn follow_nodes_to_position(
+        &self,
         position: L,
-    ) -> Result<(usize, &'a TreeNode<B>), (usize, &'a TreeNode<B>)> {
+    ) -> Result<(usize, &TreeNode<B>), (usize, &TreeNode<B>)> {
         // start in root
         let mut addr = TreePos {
             idx: 0,
@@ -366,11 +371,10 @@ where
     /// Inserts/replaces chunks at specified locations.
     /// This operation will create necessary intermediate nodes to meet datastructure
     /// constraints.
-    /// This operation may allocate memory.
+    /// This operation may allocate memory more than once if targets is long enough
     ///
     /// If targets are nearby, we could save quite a bit of resources by
     /// reducing walking needed to insert data.
-    /// Insert many does not
     pub fn insert_many<T, V>(&mut self, mut targets: T, mut chunk_creator: V)
     where
         T: Iterator<Item = L>,
@@ -477,8 +481,6 @@ where
             Some(idx) => idx.get() as usize,
             None => {
                 //println!("Inserting new node");
-                // drop reference to current node to keep borrow checker happy
-                drop(current_node);
                 // modify nodes slab
                 let idx = self.nodes.insert(TreeNode::new());
                 // update pointer in parent node

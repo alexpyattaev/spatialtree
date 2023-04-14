@@ -525,16 +525,14 @@ mod tests {
 
         let mut tree = OctTree::<Chunk, OctVec>::new();
         let pos_iter = iter_all_positions_in_bounds(
-            OctVec::new([0u8, 0, 0], D),
-            OctVec::new([2u8 * R, 2 * R, 2 * R], D),
+            OctVec::build(0, 0, 0, D),
+            OctVec::build(2 * R, 2 * R, 2 * R, D),
         )
         .filter(|p| p.depth == D);
-
         tree.insert_many(pos_iter, &mut chunk_creator);
-
         // query the whole region for filled voxels
         let cmax = 2u8 * R;
-        let min = OctVec::new([0, 0, 0], D);
+        let min = OctVec::build(0, 0, 0, D);
         let max = OctVec::new([cmax, cmax, cmax], D);
         let mut filled_voxels: usize = 0;
         for (l, c) in tree.iter_chunks_in_aabb_mut(min, max) {

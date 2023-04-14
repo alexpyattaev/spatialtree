@@ -168,7 +168,7 @@ fn draw(mouse_pos: (f32, f32), tree: &mut QuadTree<Chunk, QuadVec>, ctx: &Render
 
     // go over all chunks, iterator version
     for (_, container) in tree.iter_chunks() {
-        let (chunk, position) = (&container.chunk, container.position);
+        let (chunk, position) = (&container.chunk, container.position());
         if chunk.visible {
             // draw it if it's visible
             // here we get the chunk position and size
