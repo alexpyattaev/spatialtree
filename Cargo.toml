@@ -13,19 +13,16 @@ categories = ["data-structures"]
 [dependencies]
 arrayvec = "0.7.2"
 duplicate = "1.0.0"
-freelist = "0.1.0"
-itertools = "0.10.5"
 slab = "0.4.8"
-soa_derive = "0.12.0"
-static_assertions = "1.1.0"
+#soa_derive = "0.12.0"
 rand ={version="0.8.5", features=['small_rng'], optional = true }
-num-traits = "0.2.15"
 
 [features]
 default = ["rand"]
 rand=["dep:rand"]
 
 [dev-dependencies]
+freelist = "0.1.0"
 lru = "0.10.0"
 rayon = "1.5"
 glium = "0.30"
@@ -47,16 +44,13 @@ harness = false
 [profile.release]
 opt-level=3
 overflow-checks = false
-#debug=1
 debug=0
 strip = "symbols"
 debug-assertions=false
 lto="fat"
-#panic="abort"
-#codegen-units=1
+
 
 [profile.bench]
-#debug = 1
 debug=0
 lto="fat"
 strip = "symbols"

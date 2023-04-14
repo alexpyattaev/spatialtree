@@ -18,6 +18,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 //! Iterators over tree data and over coordinates
 use crate::coords::*;
 use crate::tree::*;
+use crate::util_funcs::*;
 
 /// iterator for all coordinates that are inside given bounds
 pub struct CoordsInBoundsIter<const N: usize, L: LodVec<N>> {
@@ -86,6 +87,9 @@ where
 
     /// max of the bound box
     bound_max: L,
+
+    #[cfg(test)]
+    pub max_stack: usize,
 }
 
 impl<'a, const N: usize, const B: usize, L> ChunkIdxInAABBIter<'a, N, B, L>
@@ -103,10 +107,6 @@ where
             pos: L::root(),
         });
 
-        #[cfg(test)]
-        unsafe {
-            MAX_STACK = 1;
-        }
 
         ChunkIdxInAABBIter {
             to_visit,
@@ -115,6 +115,8 @@ where
             max_depth: bound_min.depth(),
             bound_min,
             bound_max,
+            #[cfg(test)]
+            max_stack:1
         }
     }
     #[inline]
@@ -163,8 +165,8 @@ where
                             idx: child_idx.get() as usize,
                         });
                         #[cfg(test)]
-                        unsafe {
-                            MAX_STACK = MAX_STACK.max(self.to_visit.len());
+                        {
+                            self.max_stack = self.max_stack.max(self.to_visit.len());
                         }
                     }
                     if let Some(chunk_idx) = cur_node.chunk[i].get() {
@@ -248,8 +250,7 @@ pub fn iter_all_positions_in_bounds<const N: usize, L: LodVec<N>>(
     ite
 }
 
-#[cfg(test)]
-static mut MAX_STACK: usize = 0;
+
 
 impl<'a, const N: usize, const B: usize, C, L> Tree<N, B, C, L>
 where
@@ -276,7 +277,7 @@ where
     ) -> ChunksInAABBIter<N, B, C, L> {
         ChunksInAABBIter {
             chunks: &self.chunks,
-            chunk_idx_iter: ChunkIdxInAABBIter::new(&self.nodes, bound_min, bound_max),
+             chunk_idx_iter: ChunkIdxInAABBIter::new(&self.nodes, bound_min, bound_max),
         }
     }
     /// Iterate over mutable references to all chunks of the tree in the bounding box. Also returns chunk positions.
@@ -371,43 +372,42 @@ mod tests {
     #[test]
     fn aabb_iterator_stack_size() {
         println!("Testing OctTree");
-        for _ in 0..50 {
-            for d in 1..6 {
-                println!("Depth {d}");
-                let mut tree = OctTree::<Chunk, OctVec>::new();
-                let cmax = (1u8 << d) - 1;
-                let min = OctVec::new([0u8, 0, 0], d);
-                let max = OctVec::new([cmax, cmax, cmax], d);
-                let pos_iter = iter_all_positions_in_bounds(min, max);
 
-                tree.insert_many(pos_iter, |_| Chunk { visible: false });
-                for (_l, _c) in tree.iter_chunks_in_aabb(min, max) {}
+        for d in 1..6 {
+            println!("Depth {d}");
+            let mut tree = OctTree::<Chunk, OctVec>::new();
+            let cmax = (1u8 << d) - 1;
+            let min = OctVec::new([0u8, 0, 0], d);
+            let max = OctVec::new([cmax, cmax, cmax], d);
+            let pos_iter = iter_all_positions_in_bounds(min, max);
 
-                let expected_maxstack = ChunkIdxInAABBIter::<3, 8, OctVec>::stack_size(min);
-                unsafe {
-                    assert_eq!(MAX_STACK, expected_maxstack);
-                    MAX_STACK = 0;
-                }
-            }
+            tree.insert_many(pos_iter, |_| Chunk { visible: false });
+            let mut ite = tree.iter_chunks_in_aabb(min, max);
+            while ite.next().is_some() {}
 
-            println!("Testing QuadTree");
-            for d in 1..10 {
-                println!("Depth {d}");
-                let mut tree = QuadTree::<Chunk, QuadVec<u16>>::new();
-                let cmax = (1u16 << d) - 1;
-                let min = QuadVec::new([0u16, 0], d);
-                let max = QuadVec::new([cmax, cmax], d);
-                let pos_iter = iter_all_positions_in_bounds(min, max);
+            let expected_maxstack = ChunkIdxInAABBIter::<3, 8, OctVec>::stack_size(min);
 
-                tree.insert_many(pos_iter, |_| Chunk { visible: false });
-                for (_l, _c) in tree.iter_chunks_in_aabb(min, max) {}
-                let expected_maxstack = ChunkIdxInAABBIter::<2, 4, QuadVec<u16>>::stack_size(min);
-                unsafe {
-                    assert_eq!(MAX_STACK, expected_maxstack);
-                    MAX_STACK = 0;
-                }
-            }
+            assert_eq!(ite.chunk_idx_iter.max_stack, expected_maxstack);
+
         }
+
+        println!("Testing QuadTree");
+        for d in 1..10 {
+            println!("Depth {d}");
+            let mut tree = QuadTree::<Chunk, QuadVec<u16>>::new();
+            let cmax = (1u16 << d) - 1;
+            let min = QuadVec::new([0u16, 0], d);
+            let max = QuadVec::new([cmax, cmax], d);
+            let pos_iter = iter_all_positions_in_bounds(min, max);
+
+            tree.insert_many(pos_iter, |_| Chunk { visible: false });
+            let mut ite = tree.iter_chunks_in_aabb(min, max);
+            while ite.next().is_some() {}
+            let expected_maxstack = ChunkIdxInAABBIter::<2, 4, QuadVec<u16>>::stack_size(min);
+
+            assert_eq!(ite.chunk_idx_iter.max_stack, expected_maxstack);
+        }
+
     }
     #[test]
     fn iterate_over_chunks_in_aabb() {

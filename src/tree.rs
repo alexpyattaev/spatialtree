@@ -22,146 +22,9 @@ use slab::Slab;
 use std::fmt::Debug;
 use std::num::NonZeroU32;
 use std::ops::ControlFlow;
+use crate::util_funcs::*;
 
-/// Type for relative pointers to nodes in the tree. Kept 32bit for cache locality during lookups.
-/// Should you need > 4 billion nodes in the tree do let me know who sells you the RAM.
-pub type NodePtr = Option<NonZeroU32>;
 
-/// Type for relative pointers to chunks in the tree. Kept 32bit for cache locality during lookups.
-/// Encodes "None" variant as -1, and Some(idx) as positive numbers
-/// This is not as fast as NonZeroU32, but close enough for our needs
-/// Should you need > 2 billion chunks in the tree do let me know who sells you the RAM.
-#[derive(PartialEq, Eq, Clone, Copy, Debug)]
-pub struct ChunkPtr(i32);
-impl core::fmt::Display for ChunkPtr {
-    #[inline]
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_fmt(format_args!("ChunkPtr({:?})", self.get()))
-    }
-}
-
-impl ChunkPtr {
-    #[inline]
-    pub(crate) fn get(self) -> Option<usize> {
-        match self.0 {
-            -1 => None,
-            _ => Some(self.0 as usize),
-        }
-    }
-
-    #[inline]
-    pub(crate) fn take(&mut self) -> Option<usize> {
-        let rv = match self.0 {
-            -1 => None,
-            _ => Some(self.0 as usize),
-        };
-        *self = Self::None;
-        rv
-    }
-
-    #[inline]
-    pub(crate) fn from(x: Option<usize>) -> Self {
-        match x {
-            Some(v) => Self ( v as i32 ),
-            None => Self::None,
-        }
-    }
-    // Cheat for "compatibility" with option.
-    #[allow(non_upper_case_globals)]
-    const None: Self = ChunkPtr( -1 );
-}
-
-//TODO: impl Try once stable
-/*impl std::ops::Try for ChunkPtr{
-    type Output = usize;
-
-    type Residual;
-
-    fn from_output(output: Self::Output) -> Self {
-        todo!()
-    }
-
-    fn branch(self) -> ControlFlow<Self::Residual, Self::Output> {
-        todo!()
-    }
-}*/
-
-//TODO - use struct of arrays?
-/// Tree node that encompasses multiple children at once. This just barely fits into one cache line for octree.
-/// For each possible child, the node has two relative pointers:
-///  * children will point to the TreeNode in a given branch direction
-///  * chunk will point to the data chunk in a given branch direction
-/// both pointers may be "None", indicating either no children, or no data
-#[derive(Clone, Debug)]
-pub struct TreeNode<const B: usize> {
-    /// children, these can't be the root (index 0), so we can use Some and Nonzero for slightly more compact memory
-    pub children: [NodePtr; B],
-
-    /// where the chunks for particular children is stored (if any)
-    pub chunk: [ChunkPtr; B],
-}
-
-impl<const B: usize> TreeNode<B> {
-    #[inline]
-    fn new() -> Self {
-        Self {
-            children: [None; B],
-            chunk: [ChunkPtr::None; B],
-        }
-    }
-
-    #[inline]
-    pub fn iter_existing_chunks(
-        &self,
-    ) -> impl Iterator<Item = (usize, usize)>  +'_ {
-        self.chunk.iter().filter_map(|c| c.get()).enumerate()
-    }
-}
-
-#[inline]
-pub fn iter_treenode_children< const N: usize>(
-    children: &[NodePtr; N],
-) -> impl Iterator<Item = (usize, usize)> + '_ {
-    children
-        .iter()
-        .filter_map(|c| Some((*c)?.get() as usize))
-        .enumerate()
-}
-
-// utility struct for holding actual chunks and the node that owns them
-#[derive(Clone, Debug)]
-pub struct ChunkContainer<const N: usize, C: Sized, L: LodVec<N>> {
-    /// actual data inside the chunk
-    pub chunk: C,
-    // where the chunk is (as this can not be easily recovered from node tree).
-    pub(crate) position: L,
-    // index of the node that holds this chunk. Do not modify unless you know what you are doing!
-    pub(crate) node_idx: u32,
-    // index of the child in the node. Do not modify unless you know what you are doing!
-    pub(crate) child_idx: u8,
-}
-
-impl<const N: usize, C: Sized, L: LodVec<N>> ChunkContainer<N, C, L> {
-    /// get an mutable pointer to chunk which is not tied to the lifetime of the container
-    /// this is only needed for iterators.
-    #[inline(always)]
-    pub fn chunk_ptr(&mut self) -> *mut C {
-        &mut self.chunk as *mut C
-    }
-    /// where the chunk is. Modifying this
-    /// will not move the chunk to a new position, so this is readonly
-    #[inline(always)]
-    pub fn position(&self) -> L {
-        self.position
-    }
-}
-
-/// utility struct for holding locations in the tree.
-#[derive(Clone, Debug, Copy)]
-pub struct TreePos<const N: usize, L: LodVec<N>> {
-    pub idx: usize, // node index
-    pub pos: L,     // and it's position
-}
 
 // type aliases to make iterators more readable
 pub(crate) type ChunkStorage<const N: usize, C, L> = Slab<ChunkContainer<N, C, L>>;
@@ -233,14 +96,13 @@ where
         };
         // make sure target is not root (else we will be stuck here)
         debug_assert_ne!(position, addr.pos);
-
         // then loop
         loop {
             // SAFETY: the node hierarchy should be sound. If it is not we are doomed.
             let current = unsafe {
                 (self.nodes.get_unchecked_mut(addr.idx) as *mut TreeNode<B>)
                     .as_mut()
-                    .unwrap()
+                    .unwrap_unchecked()
             };
             // compute child index & position towards target
             let child_idx = addr.pos.get_child_index(position);
@@ -429,6 +291,7 @@ where
     pub fn pop_chunk_by_position(&mut self, pos: L) -> Option<C> {
         let (child, node) = self.follow_nodes_to_position_mut(pos).ok()?;
         let chunk_idx = node.chunk[child].take()?;
+
         let chunk_rec = self.chunks.remove(chunk_idx);
         Some(chunk_rec.chunk)
     }
@@ -560,7 +423,14 @@ where
         });
     }
 
-    /// Defragments the nodes array to enable faster operation.
+    /// Prunes the nodes array to delete all nodes that have no chunks.
+    /// This requires nodes to be traversed in a depth-first manner, so this is somewhat slow on larger trees
+    /// You only really need this if you have deleted a whole bunch of chunks and really need the nodes memory back
+    pub fn prune_nodes(&mut self) {
+        todo!()
+    }
+
+    /// Defragments the nodes array to enable faster operation and prune dead leaves.
     /// This requires nodes to be copied, so this will allocate. Many unsafes would be needed otherwise.
     /// The next update might take longer due to memory allocations.
     pub fn defragment_nodes(&mut self) {
@@ -579,8 +449,14 @@ where
             let children = self.new_nodes[n].children;
             // now go over node's children and move them over
             for (i, old_idx) in iter_treenode_children(&children) {
+                let old_node = self.nodes.remove(old_idx);
+                //eliminate empty nodes
+                if old_node.is_empty(){
+                    self.new_nodes[n].children[i] = None;
+                    continue;
+                }
                 // move the child into new slab
-                let new_idx = self.new_nodes.insert(self.nodes.remove(old_idx));
+                let new_idx = self.new_nodes.insert(old_node);
                 // ensure slab is not doing anything fishy, and actually gives us correct indices
                 debug_assert_eq!(new_idx, n + i + 1);
                 // fix our reference to that child
@@ -731,7 +607,7 @@ where
 /// Construct an itreator that traverses a subtree in nodes that begins in start (including start itself).
 #[inline]
 pub fn traverse<'a, const B: usize>(
-    nodes: &'a Slab<TreeNode<B>>,
+    nodes: &'a NodeStorage<B>,
     start: &'a TreeNode<B>,
 ) -> TraverseIter<'a, B> {
     //TODO use better logic here (DFS)!
@@ -742,7 +618,7 @@ pub fn traverse<'a, const B: usize>(
 
 ///Helper to perform breadth-first traverse of tree's nodes.
 pub struct TraverseIter<'a, const B: usize> {
-    nodes: &'a Slab<TreeNode<B>>,
+    nodes: &'a NodeStorage<B>,
     to_visit: Vec<&'a TreeNode<B>>,
     //to_visit: arrayvec::ArrayVec<&'a TreeNode<B>, B>,
 }
@@ -875,52 +751,32 @@ mod tests {
         }
     }
 
+
     #[test]
-    pub fn things() {
-        //
-        // // and move the target
-        // while tree.prepare_update(&[QuadVec::new(16, 8, 16)], 8, |_| TestChunk {}) {
-        //     // and actually update
-        //     tree.do_update();
-        // }
-        //
-        // // get the resulting chunk from a search
-        // let found_chunk = tree.get_chunk_from_position(QuadVec::new(16, 8, 16));
-        //
-        // // and find the resulting chunk
-        // println!("{:?}", found_chunk.is_some());
-        //
-        // // and make the tree have no items
-        // while tree.prepare_update(&[], 8, |_| TestChunk {}) {
-        //     // and actually update
-        //     tree.do_update();
-        // }
-        //
-        // // and do the same for an octree
-        // let mut tree = Tree::<TestChunk, OctVec>::new(64);
-        //
-        // // as long as we need to update, do so
-        // while tree.prepare_update(&[OctVec::new(128, 128, 128, 32)], 8, |_| TestChunk {}) {
-        //     // and actually update
-        //     tree.do_update();
-        // }
-        //
-        // // and move the target
-        // while tree.prepare_update(&[OctVec::new(16, 8, 32, 16)], 8, |_| TestChunk {}) {
-        //     // and actually update
-        //     tree.do_update();
-        // }
-        //
-        // // and make the tree have no items
-        // while tree.prepare_update(&[], 8, |_| TestChunk {}) {
-        //     // and actually update
-        //     tree.do_update();
-        // }
+    pub fn defragment() {
+        let mut tree = QuadTree::<TestChunk, QuadVec>::new();
+        let targets = [
+            QuadVec::build(0u8, 0u8, 2u8),
+            QuadVec::build(0u8, 1u8, 2u8),
+            QuadVec::build(3u8, 3u8, 2u8),
+            QuadVec::build(2u8, 2u8, 2u8),
+        ];
+        tree.insert_many(targets.iter().copied(), |_| TestChunk {});
+        // slab is a Vec, so it should have binary exponential growth. With 4 entires it should have capacity = len.
+        assert_eq!(tree.chunks.capacity(),tree.chunks.len());
+        tree.pop_chunk_by_position(targets[1]);
+        assert_eq!(tree.chunks.capacity(),4);
+        assert_eq!(tree.chunks.len(),3);
+        tree.defragment_chunks();
+        tree.shrink_to_fit();
+        assert_eq!(tree.chunks.capacity(),tree.chunks.len());
+        dbg!(tree.nodes.len());
+        tree.pop_chunk_by_position(targets[0]);
+        //TODO!
+        //tree.prune();
+        dbg!(tree.nodes.len());
     }
-    #[test]
-    pub fn defragment_chunks() {}
-    #[test]
-    pub fn defragment_nodes() {}
+
 
     #[test]
     pub fn alignment() {

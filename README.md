@@ -27,6 +27,7 @@ Internally, the tree tries to keep all needed memory allocated in slab arenas to
  - Data chunks that are nearby in space do not necessarily land in nearby locations in the tree's memory.
  - There is no way to defragment node storage memory short of rebuilding the tree from scratch (which means doubling memory usage)
 
+
 ### Examples:
  - [rayon](examples/rayon.rs): shows how to use the tree with rayon to generate new chunks in parallel, and cache chunks already made.
  - [glium](examples/glium.rs): shows how a basic drawing setup would work, with glium to do the drawing.
@@ -188,10 +189,13 @@ tree.shrink_to_fit();
 
 ## Roadmap
 ### 0.2.0:
- - swap L and C, so the key (position) is before the chunk, which is consistent with other key-value datatypes in rust
- - more benchmarks
+ - There is no way to prune nodes (yet). They do not eat much RAM, but it may become a problem.
+ - Organize benchmarks better
+
 ### 0.3.0:
- - use generic const expressions to improve API
+ - Swap L and C, so the key (position) is before the chunk, which is consistent with other key-value datatypes in rust
+ - Use generic const expressions to improve templating
+
 
 ## License
 Licensed under either

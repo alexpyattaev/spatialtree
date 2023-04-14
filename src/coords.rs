@@ -238,9 +238,6 @@ where
         let max_lowered = max.pos.iter().map(|e| e.tousize() >> max_difference);
         //println!("lowered {self_lowered:?},  {min_lowered:?}, {max_lowered:?}");
         // then check if we are inside the AABB
-        /*self.depth <= max_depth
-        && itertools::izip!(self_lowered, min_lowered, max_lowered)
-            .all(|(slf, min, max)| slf >= min && slf <= max)*/
         self.depth <= max_depth
             && self_lowered
                 .zip(min_lowered.zip(max_lowered))
