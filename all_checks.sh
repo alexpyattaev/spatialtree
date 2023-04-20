@@ -8,4 +8,4 @@ DIE()
 cargo check || DIE
 cargo clippy || DIE
 cargo test || DIE
-cargo bench --no-run --profile debug || DIE
+cargo bench --no-run --profile dev || DIE
