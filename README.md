@@ -27,6 +27,7 @@ Internally, the tree tries to keep all needed memory allocated in slab arenas to
 
  - Data chunks that are nearby in space do not necessarily land in nearby locations in the tree's memory.
  - There is no way to defragment node storage memory short of rebuilding the tree from scratch (which means doubling memory usage)
+ - Like any tree, this will become less efficient with depth. Consider using at most 8 levels of depth, and stitching larger areas with a [spatial hash](https://crates.io/crates/spatial_hash_3d).
 
 
 ### Examples:
