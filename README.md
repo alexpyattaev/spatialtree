@@ -1,3 +1,4 @@
+[![Crates.io](https://img.shields.io/crates/v/spatialtree)](https://crates.io/crates/spatialtree)
 [![Documentation](https://docs.rs/spatialtree/badge.svg)](https://docs.rs/spatialtree)
 
 # Spatial trees
