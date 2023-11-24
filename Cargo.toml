@@ -8,6 +8,9 @@ repository = "https://github.com/alexpyattaev/spatialtree"
 documentation = "https://docs.rs/spatialtree"
 keywords = ["octree", "quadtree", "tree","lod", "generic"]
 categories = ["data-structures"]
+exclude = [
+    ".github/",
+]
 
 
 [dependencies]
