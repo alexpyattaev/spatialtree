@@ -310,7 +310,7 @@ where
         //dbg!(addr, tgt);
         let child_idx = addr.pos.get_child_index(tgt);
         let child_pos = addr.pos.get_child(child_idx);
-        let mut current_node = self.nodes.get_mut(addr.idx).expect("Node index broken!");
+        let current_node = self.nodes.get_mut(addr.idx).expect("Node index broken!");
         //println!("Current node {addr:?}");
         if child_pos == tgt {
             //println!("Found child {child_pos:?}, id {child_idx:?}");
