@@ -24,10 +24,10 @@ use spatialtree::*;
 
 const N_LOOKUPS: usize = 40;
 
-type DTYPE = u8;
+type DataType = u8;
 
-fn generate_area_bounds(rng: &mut SmallRng, depth: u8) -> (OctVec<DTYPE>, OctVec<DTYPE>) {
-    let cmax = ((1usize << depth as usize) - 1) as DTYPE;
+fn generate_area_bounds(rng: &mut SmallRng, depth: u8) -> (OctVec<DataType>, OctVec<DataType>) {
+    let cmax = ((1usize << depth as usize) - 1) as DataType;
 
     let min = rand_cv(
         rng,
@@ -40,7 +40,7 @@ fn generate_area_bounds(rng: &mut SmallRng, depth: u8) -> (OctVec<DTYPE>, OctVec
         OctVec::new([cmax, cmax, cmax], depth),
     );
 
-    return (min, max);
+    (min, max)
 }
 
 struct ChuChunk {

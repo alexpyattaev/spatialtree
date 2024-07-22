@@ -18,13 +18,11 @@
 //! Contains the tree struct, which is used to hold all chunks
 
 use crate::coords::*;
+use crate::util_funcs::*;
 use slab::Slab;
 use std::fmt::Debug;
 use std::num::NonZeroU32;
 use std::ops::ControlFlow;
-use crate::util_funcs::*;
-
-
 
 // type aliases to make iterators more readable
 pub(crate) type ChunkStorage<const N: usize, C, L> = Slab<ChunkContainer<N, C, L>>;
@@ -37,6 +35,7 @@ pub(crate) type NodeStorage<const B: usize> = Slab<TreeNode<B>>;
 /// Template parameters are:
 /// * N is the number bits needed to encode B, i.e. 3 for octrees and 4 for quadtrees.
 /// * B is the branch count per node, i.e. 8 for octrees and 4 for quadtrees. Has to be power of two.
+///
 /// An invariant between the two has to be ensured where 1<<N == B, else tree will fail to construct.
 /// This will look nicer once const generics fully stabilize.
 #[derive(Clone, Debug)]
@@ -451,7 +450,7 @@ where
             for (i, old_idx) in iter_treenode_children(&children) {
                 let old_node = self.nodes.remove(old_idx);
                 //eliminate empty nodes
-                if old_node.is_empty(){
+                if old_node.is_empty() {
                     self.new_nodes[n].children[i] = None;
                     continue;
                 }
@@ -751,7 +750,6 @@ mod tests {
         }
     }
 
-
     #[test]
     pub fn defragment() {
         let mut tree = QuadTree::<TestChunk, QuadVec>::new();
@@ -763,20 +761,19 @@ mod tests {
         ];
         tree.insert_many(targets.iter().copied(), |_| TestChunk {});
         // slab is a Vec, so it should have binary exponential growth. With 4 entires it should have capacity = len.
-        assert_eq!(tree.chunks.capacity(),tree.chunks.len());
+        assert_eq!(tree.chunks.capacity(), tree.chunks.len());
         tree.pop_chunk_by_position(targets[1]);
-        assert_eq!(tree.chunks.capacity(),4);
-        assert_eq!(tree.chunks.len(),3);
+        assert_eq!(tree.chunks.capacity(), 4);
+        assert_eq!(tree.chunks.len(), 3);
         tree.defragment_chunks();
         tree.shrink_to_fit();
-        assert_eq!(tree.chunks.capacity(),tree.chunks.len());
+        assert_eq!(tree.chunks.capacity(), tree.chunks.len());
         dbg!(tree.nodes.len());
         tree.pop_chunk_by_position(targets[0]);
         //TODO!
         //tree.prune();
         dbg!(tree.nodes.len());
     }
-
 
     #[test]
     pub fn alignment() {

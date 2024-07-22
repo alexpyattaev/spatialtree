@@ -568,7 +568,7 @@ mod tests {
             );
 
             for (l, c) in tree.iter_chunks_in_aabb_mut(min, max) {
-                assert_eq!(c.visible, false, "no way any voxel is still visible");
+                assert!(!c.visible, "no way any voxel is still visible");
                 assert_eq!(
                     l.pos.depth, D,
                     "All chunks must be at max depth (as we did not insert any others)"

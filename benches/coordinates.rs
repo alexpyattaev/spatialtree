@@ -26,8 +26,7 @@ fn run_eval<const N: usize, FL: LodVec<N>>(c: &mut Criterion, title: &str) {
     let mut rng = SmallRng::seed_from_u64(42);
     let samples_num = 10;
 
-    //for depth in [1, 4, 16].iter() {
-    for depth in [1].iter() {
+    for depth in [1, 4].iter() {
         group.significance_level(0.1).sample_size(samples_num);
         //TODO: more sensible stuff here
         group.bench_with_input(BenchmarkId::from_parameter(depth), depth, |b, &_depth| {

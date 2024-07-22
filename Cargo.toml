@@ -1,35 +1,33 @@
 [package]
 name = "spatialtree"
 description = "A fast and flexible generic spatial tree collection (Octree, Quadtree, etc)"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 license = "GPL-3.0"
 repository = "https://github.com/alexpyattaev/spatialtree"
 documentation = "https://docs.rs/spatialtree"
-keywords = ["octree", "quadtree", "tree","lod", "generic"]
+keywords = ["octree", "quadtree", "tree", "lod", "generic"]
 categories = ["data-structures"]
-exclude = [
-    ".github/",
-]
+exclude = [".github/"]
 
 
 [dependencies]
-arrayvec = "0.7.2"
-duplicate = "1.0.0"
-slab = "0.4.8"
-rand ={version="0.8.5", features=['small_rng'], optional = true }
+arrayvec = "0.7"
+duplicate = "1.0"
+slab = "0.4"
+rand = { version = "0.8", features = ['small_rng'], optional = true }
 
 [features]
 default = ["rand"]
-rand=["dep:rand"]
+rand = ["dep:rand"]
 
 [dev-dependencies]
-freelist = "0.1.0"
+freelist = "0.1"
 lru = "0.10.0"
 rayon = "1.5"
 glium = "0.30"
 rand_derive = "0.5.0"
-criterion = {version= "0.4.0", features=['html_reports']}
+criterion = { version = "0.4.0", features = ['html_reports'] }
 
 [[bench]]
 name = "iterators"
@@ -44,16 +42,15 @@ name = "coordinates"
 harness = false
 
 [profile.release]
-opt-level=3
+opt-level = 3
 overflow-checks = false
-debug=0
+debug = 0
 strip = "symbols"
-debug-assertions=false
-lto="fat"
+debug-assertions = false
+lto = "fat"
 
 
 [profile.bench]
-debug=0
-lto="fat"
+debug = 0
+lto = "fat"
 strip = "symbols"
-

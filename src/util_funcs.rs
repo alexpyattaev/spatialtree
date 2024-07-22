@@ -15,8 +15,8 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use std::num::NonZeroU32;
 use crate::coords::*;
+use std::num::NonZeroU32;
 
 /// Utility function to cast random structures into arrays of bytes
 /// This is mostly for debugging purposes
@@ -25,8 +25,6 @@ use crate::coords::*;
 pub unsafe fn any_as_u8_slice<T: Sized>(p: &T) -> &[u8] {
     ::core::slice::from_raw_parts((p as *const T) as *const u8, ::core::mem::size_of::<T>())
 }
-
-
 
 /// Type for relative pointers to nodes in the tree. Kept 32bit for cache locality during lookups.
 /// Should you need > 4 billion nodes in the tree do let me know who sells you the RAM.
@@ -67,13 +65,13 @@ impl ChunkPtr {
     #[inline]
     pub(crate) fn from(x: Option<usize>) -> Self {
         match x {
-            Some(v) => Self ( v as i32 ),
+            Some(v) => Self(v as i32),
             None => Self::None,
         }
     }
     // Cheat for "compatibility" with option.
     #[allow(non_upper_case_globals)]
-    pub const None: Self = ChunkPtr( -1 );
+    pub const None: Self = ChunkPtr(-1);
 }
 
 //TODO: impl Try once stable
@@ -91,12 +89,12 @@ impl ChunkPtr {
  *    }
  * }*/
 
-
 //TODO - use struct of arrays?
 /// Tree node that encompasses multiple children at once. This just barely fits into one cache line for octree.
 /// For each possible child, the node has two relative pointers:
 ///  * children will point to the TreeNode in a given branch direction
 ///  * chunk will point to the data chunk in a given branch direction
+///
 /// both pointers may be "None", indicating either no children, or no data
 #[derive(Clone, Debug)]
 pub struct TreeNode<const B: usize> {
@@ -117,26 +115,24 @@ impl<const B: usize> TreeNode<B> {
     }
 
     #[inline]
-    pub fn iter_existing_chunks(
-        &self,
-    ) -> impl Iterator<Item = (usize, usize)>  +'_ {
+    pub fn iter_existing_chunks(&self) -> impl Iterator<Item = (usize, usize)> + '_ {
         self.chunk.iter().filter_map(|c| c.get()).enumerate()
     }
 
     #[inline]
     pub fn is_empty(&self) -> bool {
-         self.children.iter().all(|c| c.is_none()) && self.chunk.iter().all(|c| *c== ChunkPtr::None)
+        self.children.iter().all(|c| c.is_none()) && self.chunk.iter().all(|c| *c == ChunkPtr::None)
     }
 }
 
 #[inline]
-pub fn iter_treenode_children< const N: usize>(
+pub fn iter_treenode_children<const N: usize>(
     children: &[NodePtr; N],
 ) -> impl Iterator<Item = (usize, usize)> + '_ {
     children
-    .iter()
-    .filter_map(|c| Some((*c)?.get() as usize))
-    .enumerate()
+        .iter()
+        .filter_map(|c| Some((*c)?.get() as usize))
+        .enumerate()
 }
 
 // utility struct for holding actual chunks and the node that owns them

@@ -35,7 +35,7 @@ struct Chunk {
 }
 
 fn make_shaders(display: &Display) -> Program {
-    let program = program!(display,
+    program!(display,
     140 => {
         vertex: "
 			#version 140
@@ -76,8 +76,7 @@ fn make_shaders(display: &Display) -> Program {
 		"
     }
     )
-    .unwrap();
-    return program;
+    .unwrap()
 }
 
 #[derive(Copy, Clone)]
@@ -98,7 +97,7 @@ impl RenderContext {
     pub fn new(event_loop: &EventLoop<()>) -> Self {
         let wb = glutin::window::WindowBuilder::new().with_title("Quadtree demo");
         let cb = glutin::ContextBuilder::new().with_vsync(true);
-        let display = Display::new(wb, cb, &event_loop).unwrap();
+        let display = Display::new(wb, cb, event_loop).unwrap();
         // make a vertex buffer
         // we'll reuse it as we only need to draw one quad multiple times anyway
         let vertex_buffer = {
@@ -125,7 +124,7 @@ impl RenderContext {
         let index_buffer = IndexBuffer::new(
             &display,
             PrimitiveType::TrianglesList,
-            &[0 as u16, 1, 2, 1, 2, 3],
+            &[0_u16, 1, 2, 1, 2, 3],
         )
         .unwrap();
 
@@ -173,7 +172,7 @@ fn draw(mouse_pos: (f32, f32), tree: &mut QuadTree<Chunk, QuadVec>, ctx: &Render
             // here we get the chunk position and size
             let uniforms = uniform! {
                 offset: position.float_coords(),
-                scale: position.float_size() as f32,
+                scale: position.float_size(),
                 state: chunk.cache_state,
                 selected: chunk.selected as i32,
             };

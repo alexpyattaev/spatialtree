@@ -14,7 +14,7 @@ Internals are partially based on:
 The aim of this crate is to provide a generic, easy to use tree data structure that can be used to make Quadtrees, Octrees for various realtime applications (e.g. games or GIS software).
 
 Internally, the tree tries to keep all needed memory allocated in slab arenas to avoid the memory fragmentation and allocator pressure. All operations, where possible, use either stack allocations or allocate at most once.
- 
+
 
 ## Features
  - Highly tunable for different scales (from 8 bit to 64 bit coordinates), 2D, 3D, N-D if desired.
@@ -97,6 +97,24 @@ let idx = tree.insert(QuadVec::new([1u8,2], 3), |p| {p.pos.iter().sum::<u8>() as
 assert_eq!(tree.get_chunk(idx).chunk, 3);
 ```
 
+Lookups in the tree can be efficiently done over a wide area using an axis-aligned bounding box (AABB) to select the desired region as follows:
+```rust
+# use spatialtree::*;
+let mut tree = OctTree::<usize, OctVec>::new();
+let min = OctVec::new([0u8, 0, 0], 3);
+let max = OctVec::new([7u8, 7, 7], 3);
+
+// create iterator over all possible positions in the tree
+let pos_iter = iter_all_positions_in_bounds(min, max);
+// fill tree with important data
+tree.insert_many(pos_iter, |_| 42 );
+// iterateing over data in AABB yields both positions and associated data chunks
+// only populated positions are yielded, empty ones are quietly skipped.
+for (pos, data) in tree.iter_chunks_in_aabb(min, max) {
+    dbg!(pos, data);
+}
+```
+Selecting chunks this way will never traverse deeper than the deepest chunk in the AABB limits provided. Both limits should have the same depth.
 
 ## Advanced usage
 This structure can be used for purposes such as progressive LOD.
