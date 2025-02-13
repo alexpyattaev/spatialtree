@@ -13,7 +13,7 @@ exclude = [".github/"]
 
 [dependencies]
 arrayvec = "0.7"
-duplicate = "1.0"
+duplicate = "2.0"
 slab = "0.4"
 rand = { version = "0.8", features = ['small_rng'], optional = true }
 
