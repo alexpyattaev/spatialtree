@@ -262,15 +262,13 @@ where
         // minimum corner of the bounding box
         let min = node.pos.iter().map(|e| {
             let x = e.tousize();
-            (x << (level_difference + 1))
-                .saturating_sub(bb_size - offset)
+            (x << (level_difference + 1)).saturating_sub(bb_size - offset)
         });
 
         // maximum corner of the bounding box
         let max = node.pos.iter().map(|e| {
             let x = e.tousize();
-            (x << (level_difference + 1))
-                .saturating_add(bb_size + offset)
+            (x << (level_difference + 1)).saturating_add(bb_size + offset)
         });
 
         // iterator over bounding boxes
@@ -376,13 +374,13 @@ pub fn rand_cv<const N: usize, R: rand::Rng, T>(
     max: CoordVec<N, T>,
 ) -> CoordVec<N, T>
 where
-    T: ReasonableIntegerLike + rand::distributions::uniform::SampleUniform,
+    T: ReasonableIntegerLike + rand::distr::uniform::SampleUniform,
 {
     debug_assert_eq!(min.depth, max.depth);
     let mut zz = [T::fromusize(0); N];
     #[allow(clippy::needless_range_loop)]
     for i in 0..N {
-        zz[i] = rng.gen_range(min.pos[i]..max.pos[i]);
+        zz[i] = rng.random_range(min.pos[i]..max.pos[i]);
     }
     CoordVec::new(zz, min.depth)
 }

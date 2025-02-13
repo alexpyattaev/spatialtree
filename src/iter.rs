@@ -107,7 +107,6 @@ where
             pos: L::root(),
         });
 
-
         ChunkIdxInAABBIter {
             to_visit,
             to_return: arrayvec::ArrayVec::new(),
@@ -116,7 +115,7 @@ where
             bound_min,
             bound_max,
             #[cfg(test)]
-            max_stack:1
+            max_stack: 1,
         }
     }
     #[inline]
@@ -125,7 +124,7 @@ where
     }
 }
 
-impl<'a, const N: usize, const B: usize, L> Iterator for ChunkIdxInAABBIter<'a, N, B, L>
+impl<const N: usize, const B: usize, L> Iterator for ChunkIdxInAABBIter<'_, N, B, L>
 where
     L: LodVec<N>,
 {
@@ -250,8 +249,6 @@ pub fn iter_all_positions_in_bounds<const N: usize, L: LodVec<N>>(
     ite
 }
 
-
-
 impl<'a, const N: usize, const B: usize, C, L> Tree<N, B, C, L>
 where
     C: Sized,
@@ -264,7 +261,7 @@ where
         &'a self,
         bound_min: L,
         bound_max: L,
-    ) -> ChunkIdxInAABBIter<N, B, L> {
+    ) -> ChunkIdxInAABBIter<'a, N, B, L> {
         ChunkIdxInAABBIter::new(&self.nodes, bound_min, bound_max)
     }
 
@@ -274,10 +271,10 @@ where
         &'a self,
         bound_min: L,
         bound_max: L,
-    ) -> ChunksInAABBIter<N, B, C, L> {
+    ) -> ChunksInAABBIter<'a, N, B, C, L> {
         ChunksInAABBIter {
             chunks: &self.chunks,
-             chunk_idx_iter: ChunkIdxInAABBIter::new(&self.nodes, bound_min, bound_max),
+            chunk_idx_iter: ChunkIdxInAABBIter::new(&self.nodes, bound_min, bound_max),
         }
     }
     /// Iterate over mutable references to all chunks of the tree in the bounding box. Also returns chunk positions.
@@ -286,7 +283,7 @@ where
         &'a mut self,
         bound_min: L,
         bound_max: L,
-    ) -> ChunksInAABBIterMut<N, B, C, L> {
+    ) -> ChunksInAABBIterMut<'a, N, B, C, L> {
         ChunksInAABBIterMut {
             chunks: &mut self.chunks,
             chunk_idx_iter: ChunkIdxInAABBIter::new(&self.nodes, bound_min, bound_max),
@@ -312,7 +309,7 @@ mod tests {
         let mut rng = SmallRng::seed_from_u64(42);
 
         for _i in 0..NUM_QUERIES {
-            let depth = rng.gen_range(4u8..8u8);
+            let depth = rng.random_range(4u8..8u8);
             let cmax = 1 << depth;
             let min = rand_cv(
                 &mut rng,
@@ -346,7 +343,7 @@ mod tests {
         let mut rng = SmallRng::seed_from_u64(42);
 
         for _i in 0..NUM_QUERIES {
-            let depth = rng.gen_range(4u8..8u8);
+            let depth = rng.random_range(4u8..8u8);
             let cmax = 1 << depth;
             let min = rand_cv(
                 &mut rng,
@@ -388,7 +385,6 @@ mod tests {
             let expected_maxstack = ChunkIdxInAABBIter::<3, 8, OctVec>::stack_size(min);
 
             assert_eq!(ite.chunk_idx_iter.max_stack, expected_maxstack);
-
         }
 
         println!("Testing QuadTree");
@@ -407,7 +403,6 @@ mod tests {
 
             assert_eq!(ite.chunk_idx_iter.max_stack, expected_maxstack);
         }
-
     }
     #[test]
     fn iterate_over_chunks_in_aabb() {
