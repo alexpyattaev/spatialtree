@@ -15,7 +15,7 @@ exclude = [".github/"]
 arrayvec = "0.7"
 duplicate = "2.0"
 slab = "0.4"
-rand = { version = "0.9", features = ['small_rng'], optional = true }
+rand = { version = "0.10", features = ['small_rng'], optional = true }
 
 [features]
 default = ["rand"]
