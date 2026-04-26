@@ -390,7 +390,7 @@ where
     }
 
     #[inline]
-    pub fn iter_chunks(&mut self) -> slab::Iter<ChunkContainer<N, C, L>> {
+    pub fn iter_chunks(&self) -> slab::Iter<ChunkContainer<N, C, L>> {
         self.chunks.iter()
     }
 
